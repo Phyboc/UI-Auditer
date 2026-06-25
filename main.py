@@ -56,7 +56,7 @@ def analyzeHTML(filePath : Optional[str] = typer.Option(None, help="Enter your h
     soup = BeautifulSoup(contentText, 'html.parser')
     typer.echo(f'Analyzing the HTML content...')
 
-    analysingObject = analyser.UIAnalyzer("persona.json").analyze_html(soup)
+    analysingObject = analyser.UIAnalyzer("persona.json")
 
 
 if __name__ == "__main__":
