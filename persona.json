@@ -1,0 +1,98 @@
+[
+
+    {
+    "name": "Gen-Z Tech Early Adopter",
+    "preferences": {
+        "color_scheme": "dark_mode_preferred",
+        "min_contrast_ratio": 4.5,
+        "max_font_size": "16px",
+        "min_font_size": "12px",
+        "visual_density": "high",
+        "prefers_animations": true,
+        "text_tolerance": "minimal",
+        "icon_preference": "glyph_over_text"
+    },
+    "dealbreakers": [
+        "light_mode_only_design",
+        "large_blocks_of_text",
+        "slow_loading_animations"
+    ],
+    "explanation": "Based on research on TikTok/Notion/Discord UI patterns"
+    },
+    {
+        "name": "Elderly Digital Novice",
+        "preferences": {
+        "color_scheme": "light_mode_preferred",
+        "min_contrast_ratio": 7.0,
+        "max_font_size": "24px",
+        "min_font_size": "16px",
+        "visual_density": "low",
+        "prefers_animations": false,
+        "text_tolerance": "high",
+        "icon_preference": "text_alongside_icon"
+        },
+        "dealbreakers": [
+        "low_contrast_text",
+        "hidden_hamburger_navigation",
+        "accidental_swipe_gestures"
+        ],
+        "explanation": "Based on WCAG 2.1 AA/AAA accessibility guidelines for age-related macular degeneration and motor skill decline."
+    },
+    {
+        "name": "Corporate Power User",
+        "preferences": {
+        "color_scheme": "neutral_system_default",
+        "min_contrast_ratio": 4.5,
+        "max_font_size": "14px",
+        "min_font_size": "11px",
+        "visual_density": "high",
+        "prefers_animations": false,
+        "text_tolerance": "high",
+        "icon_preference": "compact_text_labels"
+        },
+        "dealbreakers": [
+        "excessive_whitespace_padding",
+        "unskippable_onboarding_modals",
+        "lack_of_keyboard_shortcuts"
+        ],
+        "explanation": "Based on standard high-efficiency layout patterns found in Bloomberg Terminal, Excel Online, and Jira."
+    },
+    {
+        "name": "Minimalist Creative",
+        "preferences": {
+        "color_scheme": "monochromatic_ambient",
+        "min_contrast_ratio": 4.5,
+        "max_font_size": "18px",
+        "min_font_size": "13px",
+        "visual_density": "very_low",
+        "prefers_animations": true,
+        "text_tolerance": "moderate",
+        "icon_preference": "abstract_line_art"
+        },
+        "dealbreakers": [
+        "pop_up_advertisements",
+        "bright_saturated_accent_colors",
+        "cluttered_sidebar_layouts"
+        ],
+        "explanation": "Based on high-end portfolio platforms, editorial design systems, and minimalist SaaS apps like Linear or Readwise."
+    },
+    {
+        "name": "Neurodivergent Focus Optimizer",
+        "preferences": {
+        "color_scheme": "pastel_low_stimulation",
+        "min_contrast_ratio": 5.0,
+        "max_font_size": "16px",
+        "min_font_size": "13px",
+        "visual_density": "moderate",
+        "prefers_animations": false,
+        "text_tolerance": "minimal",
+        "icon_preference": "color_coded_glyph"
+        },
+        "dealbreakers": [
+        "auto_playing_videos",
+        "infinite_scrolling_feeds",
+        "flashing_banner_animations"
+        ],
+        "explanation": "Based on cognitive load theory and UX research for ADHD and sensory-processing differences to maximize sustained attention."
+    }
+]
