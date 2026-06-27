@@ -1,14 +1,14 @@
 """
 cli.py
 ------
-Entry point: `python -m ui_evaluator <url>`
+Entry point: `python -m web_auditer <url>`
 """
 
 import sys
 import click
 from rich.console import Console
-from ui_evaluator.extractor import extract
-from ui_evaluator.reporter import print_report
+from web_auditer.extractor import extract
+from web_auditer.reporter import print_report
 
 console = Console()
 
@@ -24,8 +24,8 @@ def main(url: str, output_json: bool, timeout: int) -> None:
     Analyze the UI of a webpage at URL and print a property report.
 
     Example:\n
-        python -m ui_evaluator https://stripe.com\n
-        python -m ui_evaluator https://github.com --json
+        python -m web_auditer https://stripe.com\n
+        python -m web_auditer https://github.com --json
     """
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
