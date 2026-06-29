@@ -9,6 +9,7 @@ import click
 from rich.console import Console
 from extractor import extract
 from reporter import print_report
+# from scorer import matchedTarget
 
 console = Console()
 
@@ -43,6 +44,8 @@ def main(url: str, output_json: bool, timeout: int) -> None:
         print(json.dumps(asdict(props), indent=2))
     else:
         print_report(props)
+    
+    # mtarget = matchedTarget(props)
 
 
 if __name__ == "__main__":
