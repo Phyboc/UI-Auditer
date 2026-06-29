@@ -6,7 +6,7 @@
 
 ## The Problem
 
-When I built my first hackathon project, the UI was functional but scored terribly with judges. I'd designed it for myself, not for the actual audience. I had no way to know that until it was too late.
+When I built my hackathon project, the UI was functional but was terrible. I'd designed it for myself, not for the actual audience. I had no way to know that until it was too late.
 
 Most developers face this. You can't afford a UX researcher. Lighthouse only checks performance and accessibility. Nothing tells you *"this interface feels wrong for a 60-year-old"* or *"Gen-Z users will bounce because you used light mode."*
 
@@ -91,13 +91,12 @@ python cli.py https://example.com --persona corporate --json
 ## Project Structure
 
 ```
-ui-audit/
+ui-auditer/
 ├── extractor.py          # Playwright browser engine — extracts computed UI properties
 ├── scorer.py             # Heuristic engine — scores properties against persona rules
 ├── reporter.py           # Rich terminal renderer — responsive to terminal width
 ├── cli.py                # Entry point (Click)
-├── personas/
-│   └── personas.json     # All audience persona definitions
+├── persona.json          # All audience persona definitions
 └── requirements.txt
 ```
 
@@ -178,7 +177,7 @@ Collect ~200 human-rated (URL, persona, score) examples → train a RandomForest
 
 ## Origin
 
-Built after failing at a Microsoft Agents League Hackathon with a half-finished UI that had zero wow factor. The judges weren't the wrong audience — I just never asked what that audience actually wanted.
+Built after failing at a Microsoft Agents League Hackathon with a half-finished UI that had zero wow factor. 
 
 ---
 
