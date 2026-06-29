@@ -1,4 +1,4 @@
-# UI-Audit
+# UI-Auditer
 
 > A CLI tool that evaluates any webpage's UI against target audience preferences — and tells you exactly what to fix.
 
