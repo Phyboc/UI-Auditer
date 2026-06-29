@@ -10,7 +10,7 @@ from rich.panel import Panel
 from rich.columns import Columns
 from rich import box
 from rich.text import Text
-from web_auditer.extractor import UIProperties
+from extractor import UIProperties
 
 console = Console()
 

@@ -7,8 +7,8 @@ Entry point: `python -m web_auditer <url>`
 import sys
 import click
 from rich.console import Console
-from web_auditer.extractor import extract
-from web_auditer.reporter import print_report
+from extractor import extract
+from reporter import print_report
 
 console = Console()
 
