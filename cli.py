@@ -4,6 +4,7 @@ from rich.console import Console
 from extractor import extract
 from scorer import load_all_personas, find_persona, score
 from reporter import print_report
+from advisor import get_suggestions 
 
 console = Console()
 
@@ -15,7 +16,8 @@ console = Console()
               help="Page load timeout in milliseconds.")
 @click.option("--json", "output_json", is_flag=True,
               help="Output raw JSON instead of the rich report.")
-def main(url, persona, timeout, output_json):
+@click.option("--fix", "suggest_fix",  is_flag=True, help="Apply automatic fixes to the webpage.")
+def main(url, persona, timeout, output_json, suggest_fix):
     """Evaluate a webpage's UI against a target audience persona."""
 
     if not url.startswith(("http://", "https://")):
@@ -44,6 +46,9 @@ def main(url, persona, timeout, output_json):
         print(json.dumps({"properties": asdict(props), "score": result}, indent=2))
     else:
         print_report(props, result)
+
+    if suggest_fix:
+        print(get_suggestions(props, persona_data, result))
 
 
 if __name__ == "__main__":
