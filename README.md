@@ -1,6 +1,6 @@
 # UI-Auditer
 
-> A CLI tool that evaluates any webpage's UI against target audience preferences — and tells you exactly what to fix.
+> A CLI tool that evaluates any webpage's UI against target audience preferences — and tells you exactly what to fix. Powered by a real headless browser, heuristic scoring, and optional AI-generated CSS fixes.
 
 ---
 
@@ -10,7 +10,7 @@ When I built my hackathon project, the UI was functional but was terrible. I'd d
 
 Most developers face this. You can't afford a UX researcher. Lighthouse only checks performance and accessibility. Nothing tells you *"this interface feels wrong for a 60-year-old"* or *"Gen-Z users will bounce because you used light mode."*
 
-UI-Audit fills that gap.
+**UI-Auditer** fills that gap.
 
 ---
 
@@ -19,12 +19,18 @@ UI-Audit fills that gap.
 Point it at any URL. Tell it who your audience is. Get a scored report with specific, actionable recommendations.
 
 ```bash
-python cli.py https://yoursite.com --persona gen_z
-python cli.py https://yoursite.com --persona elderly
-python cli.py http://localhost:3000 --persona corporate
+python src/cli.py https://yoursite.com --persona gen_z
+python src/cli.py https://yoursite.com --persona elderly
+python src/cli.py http://localhost:3000 --persona corporate
 ```
 
 It uses a **headless Chromium browser** (via Playwright) to fully render the page — including React, Next.js, Vue, Tailwind, anything — then extracts computed styles the way a real browser sees them. No static HTML parsing tricks that miss 90% of the styles.
+
+You can also pass `--fix` to get **AI-generated CSS fix suggestions** via an LLM (OpenRouter):
+
+```bash
+python src/cli.py https://yoursite.com --persona gen_z --fix
+```
 
 ---
 
@@ -53,7 +59,26 @@ Each persona has a preferences profile and a list of dealbreakers — patterns t
 | **Interactivity** | Button + link count vs expected interface complexity |
 | **Dealbreakers** | Persona-specific red flags (e.g. animations for neurodivergent audience = penalty) |
 
-Final score: 0–100 with a letter grade (A/B/C/D/F). Each triggered dealbreaker docks 5 points.
+Final score: **0–100** with a letter grade (**A/B/C/D/F**). Each triggered dealbreaker docks 5 points.
+
+---
+
+## AI-Powered Fix Suggestions (`--fix`)
+
+Pass the `--fix` flag to get an LLM-generated report with:
+
+- **CSS fixes** — Specific selectors, properties, and new values with audience-aware reasoning (e.g., `body { font-size: 16px; }` for elderly users)
+- **Non-CSS suggestions** — Actionable recommendations that can't be fixed with CSS alone (e.g., restructuring navigation, adding icons)
+- **Written to file** — CSS fixes are saved to `suggested_fixes.css` so you can drop them into your project
+
+Set your API key in the `.env` file. The tool uses `LLM_API_KEY`, which should be an API key from a supported provider like **OpenRouter** or **Groq**:
+
+```bash
+# .env
+LLM_API_KEY=sk-or-v1-your-openrouter-api-key
+```
+
+> **Note:** The `--fix` flag is optional. Without it, the tool runs fully offline using rule-based heuristics.
 
 ---
 
@@ -61,14 +86,17 @@ Final score: 0–100 with a letter grade (A/B/C/D/F). Each triggered dealbreaker
 
 ```bash
 # 1. Clone
-git clone https://github.com/yourusername/ui-audit.git
-cd ui-audit
+git clone https://github.com/yourusername/ui-auditer.git
+cd ui-auditer
 
 # 2. Install dependencies
-pip install playwright click rich
+pip install playwright click rich requests python-dotenv
 
 # 3. Install Chromium (one-time)
 playwright install chromium
+
+# 4. (Optional) Set up API key for AI fix suggestions
+echo "LLM_API_KEY=sk-or-v1-your-api-key-here" > .env
 ```
 
 ---
@@ -77,13 +105,16 @@ playwright install chromium
 
 ```bash
 # Basic audit
-python cli.py <url> --persona <slug>
+python src/cli.py <url> --persona <slug>
 
 # With extended timeout (for slow local dev servers)
-python cli.py http://localhost:3000 --persona gen_z --timeout 30000
+python src/cli.py http://localhost:3000 --persona gen_z --timeout 30000
 
 # Raw JSON output (for piping or automation)
-python cli.py https://example.com --persona corporate --json
+python src/cli.py https://example.com --persona corporate --json
+
+# AI-generated CSS fix suggestions
+python src/cli.py https://example.com --persona elderly --fix
 ```
 
 ---
@@ -92,12 +123,16 @@ python cli.py https://example.com --persona corporate --json
 
 ```
 ui-auditer/
-├── extractor.py          # Playwright browser engine — extracts computed UI properties
-├── scorer.py             # Heuristic engine — scores properties against persona rules
-├── reporter.py           # Rich terminal renderer — responsive to terminal width
-├── cli.py                # Entry point (Click)
-├── persona.json          # All audience persona definitions
-└── requirements.txt
+├── src/
+│   ├── cli.py           # Entry point (Click) — orchestrates the full pipeline
+│   ├── extractor.py     # Playwright browser engine — extracts computed UI properties
+│   ├── scorer.py        # Heuristic engine — scores properties against persona rules
+│   ├── reporter.py      # Rich terminal renderer — responsive to terminal width
+│   ├── advisor.py       # LLM advisor — generates CSS fix suggestions via OpenRouter/Groq
+│   └── persona.json     # All audience persona definitions (5 built-in personas)
+├── .env                 # API keys for LLM providers (gitignored)
+├── .gitignore
+└── README.md
 ```
 
 ### How the pipeline works
@@ -113,6 +148,9 @@ scorer.py     ──  Rule engine compares UIProperties against persona JSON
  │                Each dimension scored 0–100, dealbreakers apply penalties
  ▼
 reporter.py   ──  Rich tables + color bars, responsive to terminal width
+ │
+ └── (optional) advisor.py  ──  LLM generates CSS fixes & audience-aware suggestions
+                                Saved to suggested_fixes.css
 ```
 
 ---
@@ -138,12 +176,13 @@ The target users are developers. Developers live in the terminal. A CLI is also 
 - [x] Rule-based heuristic scoring engine with dealbreaker system
 - [x] Responsive Rich terminal reporter (wide and narrow terminal layouts)
 - [x] JSON output flag for automation
+- [x] `--fix` flag: generate corrected CSS suggestions via LLM (OpenRouter/Groq)
 
 ### Next
-- [ ] `--fix` flag: generate corrected CSS suggestions via Gemini API
 - [ ] `--compare` flag: score against all personas at once
 - [ ] Screenshot capture for visual documentation
 - [ ] WCAG contrast ratio calculation from extracted colors
+- [ ] Interactive mode with real-time persona switching
 
 ### ML Upgrade Path
 The scoring engine is structured for a clean ML swap:
@@ -177,14 +216,16 @@ Collect ~200 human-rated (URL, persona, score) examples → train a RandomForest
 
 ## Origin
 
-Built after failing at a Microsoft Agents League Hackathon with a half-finished UI that had zero wow factor. 
+Built after failing at a Microsoft Agents League Hackathon with a half-finished UI that had zero wow factor.
 
 ---
 
 ## Tech Stack
 
-- **Python 3.12**
+- **Python 3.12+**
 - **Playwright** — headless Chromium, computed style extraction
 - **Rich** — terminal UI, responsive layout
 - **Click** — CLI argument parsing
+- **Requests** — LLM API calls (OpenRouter/Groq)
+- **python-dotenv** — environment variable loading
 - **JSON** — persona definition format (human-editable, no database needed)
