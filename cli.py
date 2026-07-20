@@ -16,7 +16,7 @@ console = Console()
               help="Page load timeout in milliseconds.")
 @click.option("--json", "output_json", is_flag=True,
               help="Output raw JSON instead of the rich report.")
-@click.option("--fix", "suggest_fix",  is_flag=True, help="Apply automatic fixes to the webpage.")
+@click.option("--fix", "suggest_fix",  is_flag=True, default=False, help="Apply automatic fixes to the webpage.")
 def main(url, persona, timeout, output_json, suggest_fix):
     """Evaluate a webpage's UI against a target audience persona."""
 
@@ -40,6 +40,10 @@ def main(url, persona, timeout, output_json, suggest_fix):
 
     result = score(props, persona_data)
 
+    llm_suggestions = None
+    if suggest_fix and result:
+        suggestions = get_suggestions(props, persona_data, result)
+
     if output_json:
         import json
         from dataclasses import asdict
@@ -47,8 +51,7 @@ def main(url, persona, timeout, output_json, suggest_fix):
     else:
         print_report(props, result)
 
-    if suggest_fix:
-        print(get_suggestions(props, persona_data, result))
+    
 
 
 if __name__ == "__main__":
