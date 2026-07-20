@@ -4,7 +4,7 @@ from rich.console import Console
 from projects.web_auditer.src.extractor import extract
 from projects.web_auditer.src.scorer import load_all_personas, find_persona, score
 from projects.web_auditer.src.reporter import print_report
-from projects.web_auditer.src.advisor import get_suggestions 
+from projects.web_auditer.src.advisor import get_suggestions, write_css_fix_file
 
 console = Console()
 
@@ -42,14 +42,26 @@ def main(url, persona, timeout, output_json, suggest_fix):
 
     llm_suggestions = None
     if suggest_fix and result:
-        suggestions = get_suggestions(props, persona_data, result)
+         with console.status(f"[yellow]Asking LLM for fix suggestions…[/yellow]"):
+            try:
+                llm_result = get_suggestions(props, persona_data, result)
+                css_path = write_css_fix_file(llm_result)
+                console.print(f"[green]✓ CSS fixes written to[/green] [bold]{css_path}[/bold]")
+            except Exception as e:
+                console.print(f"[yellow]⚠ LLM fix failed:[/yellow] {e}")
+                console.print("[dim]Set GROQ_API_KEY or OPENROUTER_API_KEY in your .env file.[/dim]")
+
 
     if output_json:
-        import json
+        import json as _json
         from dataclasses import asdict
-        print(json.dumps({"properties": asdict(props), "score": result}, indent=2))
+        print(_json.dumps({
+            "properties": asdict(props),
+            "score": result,
+            "fixes": llm_result,
+        }, indent=2))
     else:
-        print_report(props, result)
+        print_report(props, result, suggestions=llm_result)
 
     
 

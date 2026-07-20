@@ -55,4 +55,63 @@ def call_llm(prompt: str) -> str:
     if not llm_url or not llm_api_key:
         raise ValueError("LLM_URL and LLM_API_KEY must be set in the environment variables.")
     
-    
+    response = requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/Phyboc/UI-Auditer",
+        },
+        json={
+            "model": "meta-llama/llama-3.3-70b-instruct:free",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.3,
+            "max_tokens": 1024,
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"]
+
+def _parse_json(raw: str) -> dict:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        lines = raw.split("\n")
+        raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+    return json.loads(raw.strip())
+
+def get_suggestions(props: UIProperties, persona: dict, result: dict) -> dict:
+
+    prompt = build_prompt(props, persona, result)
+
+    try: 
+        raw_response = call_llm(prompt)
+        suggestions = _parse_json(raw_response)
+    except Exception as fallback_error:
+        print(f"[yellow]Warning: LLM call failed: {fallback_error}. Using fallback suggestions.[/yellow]")
+        suggestions = {
+            "summary": "The UI has multiple issues that make it hard to use for this audience.",
+            "css_fixes": [],
+            "non_css_suggestions": ["Consider a complete redesign to better suit the target audience."]
+        }
+    return suggestions
+
+
+def write_css_fix_file(suggestions: dict, output_path: str = "suggested_fixes.css") -> str:
+    """Write CSS fixes to a file the user can drop into their project."""
+    lines = [
+        "/* UI-Auditer: Suggested CSS Fixes */",
+        f"/* {suggestions.get('summary', '')} */",
+        "",
+    ]
+    for fix in suggestions.get("css_fixes", []):
+        lines.append(f"/* {fix['reason']} */")
+        lines.append(f"{fix['selector']} {{")
+        lines.append(f"  {fix['property']}: {fix['value']};")
+        lines.append("}")
+        lines.append("")
+ 
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+ 
+    return output_path
