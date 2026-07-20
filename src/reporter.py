@@ -11,7 +11,7 @@ from rich.columns import Columns
 from rich.text import Text
 from rich.padding import Padding
 from rich import box
-from extractor import UIProperties
+from projects.web_auditer.src.extractor import UIProperties
 
 console = Console()  # No fixed width — uses actual terminal size
 

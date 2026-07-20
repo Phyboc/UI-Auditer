@@ -1,7 +1,7 @@
 import os
 import json
 from dotenv import load_dotenv
-from extractor import UIProperties
+from projects.web_auditer.src.extractor import UIProperties
 import requests
 load_dotenv()
 

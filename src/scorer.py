@@ -9,7 +9,7 @@ and returns structured scores + recommendations.
 import json
 import re
 from pathlib import Path
-from extractor import UIProperties
+from projects.web_auditer.src.extractor import UIProperties
 
 
 # ---------------------------------------------------------------------------
