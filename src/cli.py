@@ -1,10 +1,10 @@
 import sys
 import click
 from rich.console import Console
-from projects.web_auditer.src.extractor import extract
-from projects.web_auditer.src.scorer import load_all_personas, find_persona, score
-from projects.web_auditer.src.reporter import print_report
-from projects.web_auditer.src.advisor import get_suggestions, write_css_fix_file
+from extractor import extract
+from scorer import load_all_personas, find_persona, score
+from reporter import print_report
+from advisor import get_suggestions, write_css_fix_file
 
 console = Console()
 

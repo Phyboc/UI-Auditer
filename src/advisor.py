@@ -1,8 +1,11 @@
 import os
 import json
 from dotenv import load_dotenv
-from projects.web_auditer.src.extractor import UIProperties
+from extractor import UIProperties
 import requests
+from rich.console import Console
+console = Console()
+
 load_dotenv()
 
 
@@ -50,20 +53,20 @@ def build_prompt(props: UIProperties, persona: dict, result: dict) -> str:
 
 
 def call_llm(prompt: str) -> str:
-    llm_url = os.getenv("LLM_URL")
+    # llm_url = os.getenv("LLM_URL")
     llm_api_key = os.getenv("LLM_API_KEY")
-    if not llm_url or not llm_api_key:
+    if not llm_api_key:
         raise ValueError("LLM_URL and LLM_API_KEY must be set in the environment variables.")
     
     response = requests.post(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {llm_api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://github.com/Phyboc/UI-Auditer",
         },
         json={
-            "model": "meta-llama/llama-3.3-70b-instruct:free",
+            "model": "qwen/qwen3-coder:free", #meta-llama/llama-3.3-70b-instruct:free
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.3,
             "max_tokens": 1024,
@@ -88,7 +91,7 @@ def get_suggestions(props: UIProperties, persona: dict, result: dict) -> dict:
         raw_response = call_llm(prompt)
         suggestions = _parse_json(raw_response)
     except Exception as fallback_error:
-        print(f"[yellow]Warning: LLM call failed: {fallback_error}. Using fallback suggestions.[/yellow]")
+        console.print(f"[yellow]Warning: LLM call failed: {fallback_error}. Using fallback suggestions.[/yellow]")
         suggestions = {
             "summary": "The UI has multiple issues that make it hard to use for this audience.",
             "css_fixes": [],
