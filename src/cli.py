@@ -49,7 +49,7 @@ def main(url, persona, timeout, output_json, suggest_fix):
                 console.print(f"[green]✓ CSS fixes written to[/green] [bold]{css_path}[/bold]")
             except Exception as e:
                 console.print(f"[yellow]⚠ LLM fix failed:[/yellow] {e}")
-                console.print("[dim]Set GROQ_API_KEY or OPENROUTER_API_KEY in your .env file.[/dim]")
+                console.print("[dim]Set LLM_API_KEY in your .env file to use AI suggestions.[/dim]")
 
 
     if output_json:
@@ -58,7 +58,7 @@ def main(url, persona, timeout, output_json, suggest_fix):
         print(_json.dumps({
             "properties": asdict(props),
             "score": result,
-            "fixes": llm_result,
+            "fixes": llm_suggestions,
         }, indent=2))
     else:
         print_report(props, result, suggestions=llm_suggestions)
