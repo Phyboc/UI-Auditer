@@ -44,8 +44,8 @@ def main(url, persona, timeout, output_json, suggest_fix):
     if suggest_fix and result:
          with console.status(f"[yellow]Asking LLM for fix suggestions…[/yellow]"):
             try:
-                llm_result = get_suggestions(props, persona_data, result)
-                css_path = write_css_fix_file(llm_result)
+                llm_suggestions = get_suggestions(props, persona_data, result)
+                css_path = write_css_fix_file(llm_suggestions)
                 console.print(f"[green]✓ CSS fixes written to[/green] [bold]{css_path}[/bold]")
             except Exception as e:
                 console.print(f"[yellow]⚠ LLM fix failed:[/yellow] {e}")
@@ -61,7 +61,7 @@ def main(url, persona, timeout, output_json, suggest_fix):
             "fixes": llm_result,
         }, indent=2))
     else:
-        print_report(props, result, suggestions=llm_result)
+        print_report(props, result, suggestions=llm_suggestions)
 
     
 
