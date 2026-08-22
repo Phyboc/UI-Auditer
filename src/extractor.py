@@ -49,15 +49,16 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        try:
+            page = browser.new_page()
 
-        # Wait until network is idle so JS frameworks finish rendering
-        page.goto(url, wait_until="networkidle", timeout=timeout)
+            # Wait until network is idle so JS frameworks finish rendering
+            page.goto(url, wait_until="networkidle", timeout=timeout)
 
-        title = page.title()
+            title = page.title()
 
-        # Single JS call extracts everything — faster than multiple round trips
-        features = page.evaluate("""() => {
+            # Single JS call extracts everything — faster than multiple round trips
+            features = page.evaluate("""() => {
 
             // 1. COLORS
             const colors = new Set();
@@ -152,7 +153,8 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
             };
         }""")
 
-        browser.close()
+        finally:
+            browser.close()
 
     return UIProperties(url=url, title=title, **features)
 
