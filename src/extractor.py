@@ -9,6 +9,8 @@ Install:
     playwright install chromium
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from playwright.sync_api import sync_playwright
 

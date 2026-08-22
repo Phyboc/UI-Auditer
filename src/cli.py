@@ -1,10 +1,10 @@
 import sys
 import click
 from rich.console import Console
-from extractor import extract
-from scorer import load_all_personas, find_persona, score
-from reporter import print_report
-from advisor import get_suggestions, write_css_fix_file
+from .extractor import extract
+from .scorer import load_all_personas, find_persona, score
+from .reporter import print_report
+from .advisor import get_suggestions, write_css_fix_file
 
 console = Console()
 
@@ -25,7 +25,7 @@ def main(url, persona, timeout, output_json, suggest_fix):
 
     # Load all personas and find the one requested
     try:
-        all_personas = load_all_personas("persona.json")
+        all_personas = load_all_personas()
         persona_data = find_persona(all_personas, persona)
     except Exception as e:
         console.print(f"[red]Persona error:[/red] {e}")

@@ -9,7 +9,7 @@ and returns structured scores + recommendations.
 import json
 import re
 from pathlib import Path
-from extractor import UIProperties
+from .extractor import UIProperties
 
 
 # ---------------------------------------------------------------------------
@@ -36,20 +36,50 @@ def load_persona(name_or_path: str) -> dict:
     return data
 
 
-def load_all_personas(path: str = "personas/personas.json") -> list[dict]:
+def load_all_personas(path: str | None = None) -> list[dict]:
+    """Load all personas from the bundled persona.json file.
+
+    If path is provided, load from that path instead.
+    Otherwise, loads from persona.json next to this module.
+    """
+    if path is None:
+        path = str(Path(__file__).parent / "persona.json")
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     return data if isinstance(data, list) else [data]
 
 
+def _slugify(name: str) -> str:
+    """Convert a persona name like 'Gen-Z Tech Early Adopter' to 'gen_z' for matching."""
+    return (
+        name.lower()
+        .replace("-", "_")
+        .replace(" ", "_")
+    )
+
+
 def find_persona(personas: list[dict], name: str) -> dict:
-    """Find a persona by partial name match (case-insensitive)."""
-    name_lower = name.lower()
+    """Find a persona by slug or partial name match (case-insensitive).
+
+    Matching order:
+      1. Exact slug match (e.g. 'gen_z' matches 'Gen-Z Tech Early Adopter')
+      2. Partial name match (e.g. 'elderly' matches 'Elderly Digital Novice')
+    """
+    name_lower = name.lower().strip()
+
+    # 1. Exact slug match
+    for p in personas:
+        if name_lower == _slugify(p["name"]):
+            return p
+
+    # 2. Partial name match
     for p in personas:
         if name_lower in p["name"].lower():
             return p
+
+    available = [_slugify(p["name"]) for p in personas]
     raise ValueError(
         f"No persona matching '{name}'. "
-        f"Available: {[p['name'] for p in personas]}"
+        f"Available slugs: {available}"
     )
 
 

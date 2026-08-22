@@ -1,7 +1,7 @@
 import os
 import json
 from dotenv import load_dotenv
-from extractor import UIProperties
+from .extractor import UIProperties
 import requests
 from rich.console import Console
 import re 

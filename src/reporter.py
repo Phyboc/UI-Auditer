@@ -3,7 +3,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 from rich import box
-from extractor import UIProperties
+from .extractor import UIProperties
  
 console = Console()
  
