@@ -12,7 +12,7 @@ console = Console()
 @click.argument("url")
 @click.option("--persona", "-p", default="gen_z",
               help="Target audience slug: gen_z | elderly | corporate | minimalist | neurodivergent")
-@click.option("--timeout", default=15000, show_default=True,
+@click.option("--timeout", type=click.INT, default=15000, show_default=True,
               help="Page load timeout in milliseconds.")
 @click.option("--json", "output_json", is_flag=True,
               help="Output raw JSON instead of the rich report.")

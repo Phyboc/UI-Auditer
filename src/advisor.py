@@ -81,12 +81,39 @@ def call_llm(prompt: str) -> str:
     return response.json()["choices"][0]["message"]["content"]
 
 def _parse_json(raw: str) -> dict:
+    """Extract and parse JSON from LLM response.
+
+    Handles: raw JSON, markdown code blocks (```json...```),
+    text before/after code blocks, and <think>...</think> tags.
+    """
     raw = raw.strip()
+
+    # Remove <think>...</think> tags (some models wrap reasoning)
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-    if raw.startswith("```"):
-        lines = raw.split("\n")
-        raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-    return json.loads(raw.strip())
+
+    # If wrapped in a markdown code block, extract the content
+    if "```" in raw:
+        # Find all code blocks and try to parse each as JSON
+        blocks = re.findall(r"```(?:json)?\s*\n(.*?)```", raw, re.DOTALL)
+        for block in blocks:
+            try:
+                return json.loads(block.strip())
+            except json.JSONDecodeError:
+                continue
+
+    # Try parsing the whole thing as JSON
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # Last resort: find the first { ... } JSON object in the text
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end > start:
+        return json.loads(raw[start : end + 1])
+
+    raise ValueError(f"No valid JSON found in LLM response:")
 
 def get_suggestions(props: UIProperties, persona: dict, result: dict) -> dict:
     """
