@@ -16,8 +16,10 @@ console = Console()
               help="Page load timeout in milliseconds.")
 @click.option("--json", "output_json", is_flag=True,
               help="Output raw JSON instead of the rich report.")
-@click.option("--fix", "suggest_fix",  is_flag=True, default=False, help="Apply automatic fixes to the webpage.")
-def main(url, persona, timeout, output_json, suggest_fix):
+@click.option("--fix", "suggest_fix", is_flag=True, default=False, help="Generate CSS fix suggestions via LLM.")
+@click.option("--output", "-o", "output_path", default=None,
+              help="Output path for suggested CSS fixes (default: suggested_fixes.css).")
+def main(url, persona, timeout, output_json, suggest_fix, output_path):
     """Evaluate a webpage's UI against a target audience persona."""
 
     if not url.startswith(("http://", "https://")):
@@ -31,6 +33,10 @@ def main(url, persona, timeout, output_json, suggest_fix):
         console.print(f"[red]Persona error:[/red] {e}")
         sys.exit(1)
 
+    # In JSON mode, suppress Rich output to keep stdout clean for piping
+    if output_json:
+        console.quiet = True
+
     with console.status(f"[cyan]Rendering {url}…[/cyan]"):
         try:
             props = extract(url, timeout=timeout)
@@ -42,10 +48,10 @@ def main(url, persona, timeout, output_json, suggest_fix):
 
     llm_suggestions = None
     if suggest_fix and result:
-         with console.status(f"[yellow]Asking LLM for fix suggestions…[/yellow]"):
+        with console.status(f"[yellow]Asking LLM for fix suggestions…[/yellow]"):
             try:
                 llm_suggestions = get_suggestions(props, persona_data, result)
-                css_path = write_css_fix_file(llm_suggestions)
+                css_path = write_css_fix_file(llm_suggestions, output_path=output_path)
                 console.print(f"[green]✓ CSS fixes written to[/green] [bold]{css_path}[/bold]")
             except Exception as e:
                 console.print(f"[yellow]⚠ LLM fix failed:[/yellow] {e}")

@@ -237,8 +237,10 @@ def _build_fallback_suggestions(props: UIProperties, persona: dict, result: dict
     }
 
 
-def write_css_fix_file(suggestions: dict, output_path: str = "suggested_fixes.css") -> str:
+def write_css_fix_file(suggestions: dict, output_path: str | None = None) -> str:
     """Write CSS fixes to a file the user can drop into their project."""
+    if output_path is None:
+        output_path = "suggested_fixes.css"
     lines = [
         "/* UI-Auditer: Suggested CSS Fixes */",
         f"/* {suggestions.get('summary', '')} */",
