@@ -15,27 +15,6 @@ from .extractor import UIProperties
 # ---------------------------------------------------------------------------
 # Persona loading
 # ---------------------------------------------------------------------------
-
-def load_persona(name_or_path: str) -> dict:
-    """
-    Load a persona by slug name (e.g. 'gen_z') or direct file path.
-    Supports both a single-persona JSON and an array of personas.
-    """
-    p = Path(name_or_path)
-    if not p.exists():
-        # Try personas/ directory
-        p = Path("personas") / f"{name_or_path}.json"
-    if not p.exists():
-        raise FileNotFoundError(f"Persona not found: {name_or_path}")
-
-    data = json.loads(p.read_text(encoding="utf-8"))
-
-    # Support array format (your current file) or single object
-    if isinstance(data, list):
-        return data[0]  # default: first persona
-    return data
-
-
 def load_all_personas(path: str | None = None) -> list[dict]:
     """Load all personas from the bundled persona.json file.
 
@@ -71,7 +50,12 @@ def find_persona(personas: list[dict], name: str) -> dict:
         if name_lower == _slugify(p["name"]):
             return p
 
-    # 2. Partial name match
+    # 2. Partial slug match (e.g. "gen_z" matches "gen_z_tech_early_adopter")
+    for p in personas:
+        if name_lower in _slugify(p["name"]):
+            return p
+
+    # 3. Partial name match
     for p in personas:
         if name_lower in p["name"].lower():
             return p
