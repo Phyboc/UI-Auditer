@@ -4,7 +4,7 @@
 
 ### *Real‑world UI review for real audiences*
 
-[![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)]()
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)]()
 [![License](https://img.shields.io/badge/License-MIT-green)]()
 [![Playwright](https://img.shields.io/badge/Playwright-Headless-45ba4b?logo=playwright&logoColor=white)]()
 [![CLI](https://img.shields.io/badge/CLI-Click-ff69b4)]()
@@ -34,8 +34,10 @@
   - [Basic Audit](#basic-audit)
   - [Personas](#personas)
   - [AI‑Powered Fix Suggestions](#ai-powered-fix-suggestions)
+  - [Custom Output Path](#custom-output-path)
   - [JSON Output](#json-output)
 - [Scoring Dimensions](#-scoring-dimensions)
+- [Testing](#-testing)
 - [Project Structure](#-project-structure)
 - [Pipeline](#-pipeline)
 - [Roadmap](#-roadmap)
@@ -61,8 +63,9 @@ Behind the scenes, it launches a **headless Chromium browser** (via Playwright) 
 | 📊 **Multi‑Dimension Scoring** | Scores across Color Scheme, Typography, Visual Density, Motion, and Interactivity — with an overall letter grade (A–F). |
 | 🚩 **Dealbreaker System** | Audience‑specific red flags that instantly penalise the score (e.g., auto‑playing video for neurodivergent users). |
 | 🎨 **Beautiful Terminal Reports** | Rich‑powered tables, color bars, and responsive layouts — looks great in any terminal width. |
-| 🤖 **AI‑Generated CSS Fixes** | Pass `--fix` to get audience‑aware CSS suggestions from an LLM (OpenRouter), saved directly to `suggested_fixes.css`. |
-| 🔌 **CI‑Friendly JSON Output** | `--json` flag dumps structured data for piping, automation, or dashboards. |
+| 🤖 **AI‑Generated CSS Fixes** | Pass `--fix` to get audience‑aware CSS suggestions from an LLM (OpenRouter), saved to a CSS file. |
+| 🔌 **CI‑Friendly JSON Output** | `--json` flag dumps structured data for piping, automation, or dashboards (Rich output suppressed). |
+| 📦 **pip‑installable** | Install globally with `pip install .` — get a `ui-auditer` command available everywhere. |
 | ⚡ **Offline‑First** | Base scoring is fully rule‑based — no API keys needed for core functionality. |
 
 ---
@@ -92,7 +95,7 @@ Behind the scenes, it launches a **headless Chromium browser** (via Playwright) 
 | **Reporting** | [Rich](https://rich.readthedocs.io/) | Terminal UI — tables, panels, colour bars |
 | **AI Advisor** | [Requests](https://requests.readthedocs.io/) | HTTP calls to OpenRouter / Groq LLM API |
 | **Config** | [python‑dotenv](https://pypi.org/project/python-dotenv/) + JSON | Environment variables + human‑editable persona definitions |
-| **Runtime** | Python **3.12+** | Modern Python with dataclasses, type hints, f‑strings |
+| **Runtime** | Python **3.11+** | Modern Python with dataclasses, type hints, f‑strings |
 
 ---
 
@@ -100,7 +103,7 @@ Behind the scenes, it launches a **headless Chromium browser** (via Playwright) 
 
 ### Prerequisites
 
-- **Python 3.12 or newer**
+- **Python 3.11 or newer**
 - **pip** (Python package manager)
 - *(Optional)* An LLM API key for `--fix` suggestions
 
@@ -111,14 +114,29 @@ Behind the scenes, it launches a **headless Chromium browser** (via Playwright) 
 git clone https://github.com/yourusername/ui-auditer.git
 cd ui-auditer
 
-# 2. Install Python dependencies
-pip install playwright click rich requests python-dotenv
+# 2. Install the package (creates the `ui-auditer` CLI command)
+pip install .
 
-# 3. Install Chromium (one‑time)
+# 3. Install Chromium browser (one-time)
 playwright install chromium
 
 # 4. Verify it works
-python src/cli.py https://example.com --persona corporate
+ui-auditer https://example.com --persona corporate
+```
+
+**Development install** (editable mode — changes to source take effect immediately):
+
+```bash
+pip install -e ".[dev]"
+playwright install chromium
+```
+
+**Without installing** (run directly from source):
+
+```bash
+pip install playwright click rich requests python-dotenv
+playwright install chromium
+python -m src https://example.com --persona gen_z
 ```
 
 ### Environment Variables
@@ -130,7 +148,7 @@ The only required variable is for the **optional** AI fix feature:
 LLM_API_KEY=sk-or-v1-your-openrouter-api-key-here
 ```
 
-> **Note:** Without `.env`, the tool runs **fully offline** using rule‑based heuristics. The `--fix` flag simply returns a fallback message.
+> **Note:** Without `.env`, the tool runs **fully offline** using rule‑based heuristics. The `--fix` flag simply returns fallback suggestions.
 
 ---
 
@@ -140,13 +158,13 @@ LLM_API_KEY=sk-or-v1-your-openrouter-api-key-here
 
 ```bash
 # Audit a production site for Gen‑Z users
-python src/cli.py https://example.com --persona gen_z
+ui-auditer https://example.com --persona gen_z
 
 # Audit a local dev server for elderly users (with extended timeout)
-python src/cli.py http://localhost:3000 --persona elderly --timeout 30000
+ui-auditer http://localhost:3000 --persona elderly --timeout 30000
 
 # Evaluate against the corporate persona
-python src/cli.py https://www.example.com --persona corporate
+ui-auditer https://www.example.com --persona corporate
 ```
 
 ### Personas
@@ -165,7 +183,7 @@ Each persona includes **dealbreakers** — patterns that tank the score (e.g., a
 
 ```bash
 # Get audience‑aware CSS fixes from an LLM
-python src/cli.py https://example.com --persona elderly --fix
+ui-auditer https://example.com --persona elderly --fix
 ```
 
 When `--fix` is passed:
@@ -174,12 +192,26 @@ When `--fix` is passed:
 3. CSS fixes are written to **`suggested_fixes.css`** — ready to drop into your project.
 4. The terminal report includes a dedicated AI Suggestions panel.
 
+### Custom Output Path
+
+Use `--output` or `-o` to control where the CSS fixes file is written:
+
+```bash
+# Write CSS fixes to a custom path
+ui-auditer https://example.com --fix -o ./public/fixes.css
+
+# Combine with --json (JSON to stdout, CSS to file)
+ui-auditer https://example.com --json --fix -o ./fixes.css | jq '.score'
+```
+
 ### JSON Output
 
 ```bash
 # Pipe structured data to jq or your own tooling
-python src/cli.py https://example.com --persona corporate --json
+ui-auditer https://example.com --persona corporate --json
 ```
+
+> **Note:** When `--json` is used, all Rich terminal output is suppressed — only clean JSON hits stdout, making it safe for piping.
 
 Example output:
 
@@ -232,32 +264,62 @@ The final score is a **weighted average** (0–100) mapped to a letter grade:
 
 ---
 
+## 🧪 Testing
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run all tests
+python -m pytest tests/ -v
+
+# Run with coverage
+python -m pytest tests/ -v --tb=short
+```
+
+**Test coverage:**
+
+| Module | Tests | What's covered |
+|---|---|---|
+| `test_scorer.py` | 49 | Persona loading, slug matching, all 5 scoring functions, dealbreakers, full pipeline |
+| `test_extractor.py` | 4 | `UIProperties` dataclass defaults, custom values, instance independence |
+
+---
+
 ## 📁 Project Structure
 
 ```
 ui-auditer/
+├── 📄 pyproject.toml         # Package config, dependencies, CLI entry point
 ├── 📁 src/
-│   ├── ⚙️  cli.py           # Entry point — Click commands, pipeline orchestration
-│   ├── 🌐 extractor.py      # Playwright browser engine — renders pages & extracts computed styles
-│   ├── 📊 scorer.py         # Heuristic engine — scores properties against persona rules
-│   ├── 📄 reporter.py       # Rich terminal renderer — tables, panels, colour bars
-│   ├── 🤖 advisor.py        # LLM advisor — generates CSS fix suggestions & writes to file
-│   └── 👤 persona.json      # 5 audience personas with preferences & dealbreakers
-├── 🔒 .env                  # API keys (gitignored)
+│   ├── 📦 __init__.py        # Package init (version)
+│   ├── 🚀 __main__.py        # python -m src support
+│   ├── ⚙️  cli.py             # Entry point — Click commands, pipeline orchestration
+│   ├── 🌐 extractor.py       # Playwright browser engine — renders pages & extracts computed styles
+│   ├── 📊 scorer.py          # Heuristic engine — scores properties against persona rules
+│   ├── 📄 reporter.py        # Rich terminal renderer — tables, panels, colour bars
+│   ├── 🤖 advisor.py         # LLM advisor — generates CSS fix suggestions & writes to file
+│   └── 👤 persona.json       # 5 audience personas with preferences & dealbreakers
+├── 📁 tests/
+│   ├── 📦 __init__.py
+│   ├── 🔧 conftest.py        # Shared test fixtures
+│   ├── 🧪 test_scorer.py     # Scorer unit tests
+│   └── 🧪 test_extractor.py  # Extractor smoke tests
+├── 🔒 .env                   # API keys (gitignored)
 ├── 🔒 .gitignore
-└── 📖 README.md             # You are here ✨
+└── 📖 README.md              # You are here ✨
 ```
 
 ### Module Responsibilities
 
-| File | Lines | Purpose |
-|---|---|---|
-| `extractor.py` | ~125 | Launches headless Chromium, evaluates a single JS blob that extracts 12+ UI properties |
-| `scorer.py` | ~230 | 5 scoring functions + dealbreaker checker; clean swap‑in point for ML models ✨ |
-| `reporter.py` | ~160 | Rich‑powered terminal output — responsive to narrow/wide terminals |
-| `advisor.py` | ~100 | Builds prompt, calls OpenRouter API, parses JSON response, writes `suggested_fixes.css` |
-| `cli.py` | ~75 | Click decorators, persona loading, error handling, decides output format |
-| `persona.json` | ~85 | 5 personas, each with ~8 preference keys + ~3 dealbreakers + research citation |
+| File | Purpose |
+|---|---|
+| `cli.py` | Click decorators, persona loading, error handling, JSON/terminal output routing |
+| `extractor.py` | Launches headless Chromium, evaluates a single JS blob that extracts 12+ UI properties |
+| `scorer.py` | 5 scoring functions + dealbreaker checker; clean swap‑in point for ML models ✨ |
+| `reporter.py` | Rich‑powered terminal output — responsive to narrow/wide terminals |
+| `advisor.py` | Builds prompt, calls OpenRouter API, parses JSON response, writes CSS fix files |
+| `persona.json` | 5 personas, each with ~8 preference keys + ~3 dealbreakers + research citation |
 
 ---
 
@@ -274,7 +336,7 @@ URL  ──▶  🌐 extractor.py
              └── ▶  🤖 advisor.py  (if --fix flag)
                         │
                         ▼
-                   suggested_fixes.css
+                   suggested_fixes.css (or custom --output path)
 ```
 
 ---
@@ -286,8 +348,11 @@ URL  ──▶  🌐 extractor.py
 - [x] 5 research‑backed audience personas with preferences & dealbreakers
 - [x] Rule‑based heuristic scoring engine (5 dimensions + dealbreaker penalties)
 - [x] Responsive Rich terminal reporter (adapts to wide & narrow terminals)
-- [x] `--json` output flag for automation / CI pipelines
+- [x] `--json` output flag for automation / CI pipelines (Rich output suppressed for clean piping)
 - [x] `--fix` flag: AI‑generated CSS fix suggestions via OpenRouter / Groq
+- [x] `--output` / `-o` flag: custom CSS fix file path
+- [x] pip‑installable package with `ui-auditer` CLI entry point
+- [x] 53 unit tests (scorer + extractor)
 
 ### 🔜 Planned
 - [ ] `--compare` flag — score against all 5 personas in a single run
@@ -296,7 +361,7 @@ URL  ──▶  🌐 extractor.py
 - [ ] 🖥️ Interactive mode — real‑time persona switching
 - [ ] 🤖 ML model integration (replace rule functions with a trained classifier)
 - [ ] 🌐 Web UI wrapper (Flask/FastAPI)
-- [ ] 📦 PyPI package (`pip install ui-auditer`)
+- [ ] 📦 Publish to PyPI (`pip install ui-auditer`)
 
 ### 🧠 ML Upgrade Path
 
@@ -347,13 +412,16 @@ cd ui-auditer
 # Create a branch
 git checkout -b feature/your-idea
 
-# Install dev dependencies
-pip install playwright click rich requests python-dotenv
+# Install in dev mode (editable + test deps)
+pip install -e ".[dev]"
 playwright install chromium
 
-# Make your changes & test
-python src/cli.py https://example.com --persona gen_z
-python src/cli.py https://example.com --persona elderly --json
+# Run tests
+python -m pytest tests/ -v
+
+# Make your changes & test manually
+ui-auditer https://example.com --persona gen_z
+ui-auditer https://example.com --persona elderly --json
 
 # Submit a pull request 🚀
 ```
