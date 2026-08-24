@@ -1,0 +1,2 @@
+[console_scripts]
+ui-auditer = src.cli:main

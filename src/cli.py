@@ -1,6 +1,12 @@
 import sys
+import io
 import click
 from rich.console import Console
+
+# Fix UnicodeEncodeError on Windows legacy terminals (cp1252)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 from .extractor import extract
 from .scorer import load_all_personas, find_persona, score
 from .reporter import print_report
