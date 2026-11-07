@@ -245,14 +245,14 @@ Example output:
 
 | Dimension | Weight | What's Checked |
 |---|---|---|
-| 🎨 **Color Scheme** | Equal | Dark/light mode match to audience expectation; dealbreakers for contrast & brightness |
+| 🎨 **Color Scheme** | Equal | Dark/light mode match **plus measured WCAG 2.1 contrast** against the persona's `min_contrast_ratio` |
 | 🔤 **Typography** | Equal | Font size range against persona's min/max requirements (e.g., ≥16px for elderly) |
 | 📐 **Visual Density** | Equal | Text‑area / page‑area ratio vs expected density level (very_low → high) |
 | 🌀 **Motion** | Equal | Presence/absence of CSS animations & transitions vs persona preference |
 | 🔘 **Interactivity** | Equal | Button + link count vs expected interface complexity for the persona |
 | 🚩 **Dealbreakers** | Penalty | Each triggered dealbreaker docks **5 points** from the final score |
 
-The final score is a **weighted average** (0–100) mapped to a letter grade:
+The final score is the **average of the five dimension scores** (20% each, 0–100) mapped to a letter grade:
 
 | Grade | Score Range |
 |---|---|
@@ -281,8 +281,10 @@ python -m pytest tests/ -v --tb=short
 
 | Module | Tests | What's covered |
 |---|---|---|
-| `test_scorer.py` | 49 | Persona loading, slug matching, all 5 scoring functions, dealbreakers, full pipeline |
+| `test_advisor.py` | 17 | Advisor unit tests |
+| `test_contrast.py` | 15 | Colour parsing, WCAG luminance, alpha compositing, contrast ratios |
 | `test_extractor.py` | 4 | `UIProperties` dataclass defaults, custom values, instance independence |
+| `test_scorer.py` | 57 | Persona loading, slug matching, all five scoring rules, contrast blending, weighted typography, dealbreakers, full pipeline |
 
 ---
 
@@ -296,6 +298,7 @@ ui-auditer/
 │   ├── 🚀 __main__.py        # python -m src support
 │   ├── ⚙️  cli.py             # Entry point — Click commands, pipeline orchestration
 │   ├── 🌐 extractor.py       # Playwright browser engine — renders pages & extracts computed styles
+│   ├── 🎨 contrast.py        # WCAG 2.1 colour parsing, luminance and contrast ratios
 │   ├── 📊 scorer.py          # Heuristic engine — scores properties against persona rules
 │   ├── 📄 reporter.py        # Rich terminal renderer — tables, panels, colour bars
 │   ├── 🤖 advisor.py         # LLM advisor — generates CSS fix suggestions & writes to file
@@ -315,7 +318,8 @@ ui-auditer/
 | File | Purpose |
 |---|---|
 | `cli.py` | Click decorators, persona loading, error handling, JSON/terminal output routing |
-| `extractor.py` | Launches headless Chromium, evaluates a single JS blob that extracts 12+ UI properties |
+| `extractor.py` | Launches headless Chromium, evaluates a single JS blob that extracts computed styles, text-node density, contrast pairs and weighted font sizes |
+| `contrast.py` | WCAG 2.1 colour parsing, relative luminance, alpha compositing and contrast ratios (unit-tested) |
 | `scorer.py` | 5 scoring functions + dealbreaker checker; clean swap‑in point for ML models ✨ |
 | `reporter.py` | Rich‑powered terminal output — responsive to narrow/wide terminals |
 | `advisor.py` | Builds prompt, calls OpenRouter API, parses JSON response, writes CSS fix files |
@@ -352,12 +356,12 @@ URL  ──▶  🌐 extractor.py
 - [x] `--fix` flag: AI‑generated CSS fix suggestions via OpenRouter / Groq
 - [x] `--output` / `-o` flag: custom CSS fix file path
 - [x] pip‑installable package with `ui-auditer` CLI entry point
-- [x] 53 unit tests (scorer + extractor)
+- [x] WCAG 2.1 contrast measurement — text/background pairs, luminance maths, persona minimum ratio
+- [x] 93 unit tests
 
 ### 🔜 Planned
 - [ ] `--compare` flag — score against all 5 personas in a single run
 - [ ] 📸 Screenshot capture for visual documentation in reports
-- [ ] 🎨 WCAG contrast ratio calculation from extracted colour values
 - [ ] 🖥️ Interactive mode — real‑time persona switching
 - [ ] 🤖 ML model integration (replace rule functions with a trained classifier)
 - [ ] 🌐 Web UI wrapper (Flask/FastAPI)

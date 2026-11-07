@@ -86,12 +86,25 @@ def _px_list(font_sizes: list[str]) -> list[float]:
     return result
 
 
+def _as_float(value, default: float | None = None) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 # ---------------------------------------------------------------------------
 # Individual scoring rules
 # ---------------------------------------------------------------------------
 
 def _score_dark_mode(props: UIProperties, prefs: dict) -> tuple[int, int, str | None]:
-    """Returns (score_earned, max_score, recommendation_or_None)"""
+    """The colour-scheme dimension.
+
+    Combines the dark/light match with measured WCAG contrast when the
+    extractor supplied contrast ratios: 60% scheme match, 40% contrast
+    compliance against the persona's ``min_contrast_ratio``. Properties
+    without contrast data keep the original scheme-only behaviour.
+    """
     scheme = prefs.get("color_scheme", "")
     wants_dark = "dark" in scheme
     wants_light = "light" in scheme
@@ -99,51 +112,92 @@ def _score_dark_mode(props: UIProperties, prefs: dict) -> tuple[int, int, str | 
 
     if wants_dark:
         if is_dark:
-            return 100, 100, None
-        return 20, 100, (
-            "This audience strongly prefers dark mode. "
-            "Consider adding a dark theme or defaulting to one."
-        )
-    if wants_light:
+            scheme_score, rec = 100, None
+        else:
+            scheme_score, rec = 20, (
+                "This audience strongly prefers dark mode. "
+                "Consider adding a dark theme or defaulting to one."
+            )
+    elif wants_light:
         if not is_dark:
-            return 100, 100, None
-        return 20, 100, (
-            "This audience prefers light mode. "
-            "The current dark background may reduce comfort."
+            scheme_score, rec = 100, None
+        else:
+            scheme_score, rec = 20, (
+                "This audience prefers light mode. "
+                "The current dark background may reduce comfort."
+            )
+    else:
+        # neutral / monochromatic — no strong preference
+        scheme_score, rec = 70, None
+
+    ratios = getattr(props, "contrast_ratios", None) or []
+    min_ratio = _as_float(prefs.get("min_contrast_ratio"))
+
+    if not ratios or min_ratio is None:
+        return scheme_score, 100, rec
+
+    failing = [r for r in ratios if r < min_ratio]
+    compliance = 1 - (len(failing) / len(ratios))
+    combined = round(0.6 * scheme_score + 0.4 * round(compliance * 100))
+
+    notes = [rec] if rec else []
+    if failing:
+        pct = round(100 * len(failing) / len(ratios))
+        notes.append(
+            f"{pct}% of sampled text styles ({len(failing)}/{len(ratios)}) fall below "
+            f"this audience's minimum contrast of {min_ratio:g}:1 "
+            f"(worst {min(failing):g}:1). Increase text/background contrast."
         )
-    # neutral / monochromatic — no strong preference
-    return 70, 100, None
+
+    return combined, 100, (" ".join(notes) if notes else None)
+
+
+def _sized_weights(props: UIProperties) -> dict[float, int]:
+    """Map font size in px to visible character count."""
+    out: dict[float, int] = {}
+    for size, chars in (getattr(props, "font_size_weights", None) or {}).items():
+        try:
+            px, count = _px(size), int(chars)
+        except (TypeError, ValueError):
+            continue
+        if count > 0:
+            out[px] = out.get(px, 0) + count
+    return out
 
 
 def _score_font_sizes(props: UIProperties, prefs: dict) -> tuple[int, int, str | None]:
-    sizes = _px_list(props.font_sizes)
+    """Typography: text-weighted when font_size_weights is present."""
+    weights = _sized_weights(props)
+    sizes = list(weights) if weights else _px_list(props.font_sizes)
     if not sizes:
         return 50, 100, "Could not detect font sizes. Ensure text is rendered on the page."
 
     min_req = _px(prefs.get("min_font_size", "12px"))
     max_req = _px(prefs.get("max_font_size", "24px"))
-
     too_small = [s for s in sizes if s < min_req]
     too_large = [s for s in sizes if s > max_req]
 
-    violations = len(too_small) + len(too_large)
-    compliance = 1 - (violations / len(sizes))
+    if weights:
+        total = sum(weights.values())
+        violating = sum(c for px, c in weights.items() if px < min_req or px > max_req)
+        compliance = 1 - (violating / total)
+    else:
+        compliance = 1 - ((len(too_small) + len(too_large)) / len(sizes))
     score = round(compliance * 100)
 
-    rec = None
     parts = []
     if too_small:
-        parts.append(
-            f"{len(too_small)} text element(s) below {min_req}px "
-            f"(smallest: {min(too_small):.0f}px)"
-        )
+        parts.append(f"{len(too_small)} size(s) below {min_req:g}px (smallest {min(too_small):.0f}px)")
     if too_large:
-        parts.append(
-            f"{len(too_large)} text element(s) above {max_req}px "
-            f"(largest: {max(too_large):.0f}px)"
-        )
+        parts.append(f"{len(too_large)} size(s) above {max_req:g}px (largest {max(too_large):.0f}px)")
+    rec = None
     if parts:
-        rec = "Typography mismatch — " + "; ".join(parts) + "."
+        if weights:
+            outside = round(100 * (1 - compliance))
+            rec = (f"Typography mismatch — {outside}% of visible text is outside "
+                   f"{min_req:g}–{max_req:g}px. " + "; ".join(parts) + ".")
+        else:
+            rec = "Typography mismatch — " + "; ".join(parts) + "."
 
     return score, 100, rec
 
@@ -231,19 +285,31 @@ def _score_interactivity(props: UIProperties, prefs: dict) -> tuple[int, int, st
     return score, 100, rec
 
 
-def _check_dealbreakers(props: UIProperties, dealbreakers: list[str]) -> list[str]:
+def _check_dealbreakers(
+    props: UIProperties,
+    dealbreakers: list[str],
+    prefs: dict | None = None,
+) -> list[str]:
     """
     Map dealbreaker strings from the persona JSON to observable properties.
     Returns a list of triggered dealbreaker messages.
     """
     triggered = []
     db_set = set(dealbreakers)
+    prefs = prefs or {}
 
     if "light_mode_only_design" in db_set and not props.is_dark_mode:
         triggered.append("light_mode_only_design — page uses light background")
 
-    if "low_contrast_text" in db_set and len(props.colors) < 3:
-        triggered.append("low_contrast_text — very few colors detected, contrast may be poor")
+    if "low_contrast_text" in db_set:
+        ratios = getattr(props, "contrast_ratios", None) or []
+        min_ratio = _as_float(prefs.get("min_contrast_ratio"), 4.5)
+        failing = [r for r in ratios if r < min_ratio]
+        if failing:
+            triggered.append(
+                f"low_contrast_text — {len(failing)}/{len(ratios)} sampled text styles "
+                f"below {min_ratio:g}:1 (worst {min(failing):g}:1)"
+            )
 
     if "excessive_whitespace_padding" in db_set and props.text_density < 0.15:
         triggered.append(
@@ -333,7 +399,7 @@ def score(props: UIProperties, persona: dict) -> dict:
     overall = round((total_score / total_max) * 100) if total_max else 0
 
     # Dealbreaker penalty — each triggered one docks 5 points
-    db_triggered = _check_dealbreakers(props, dealbreakers)
+    db_triggered = _check_dealbreakers(props, dealbreakers, prefs)
     penalty = len(db_triggered) * 5
     overall = max(0, overall - penalty)
 

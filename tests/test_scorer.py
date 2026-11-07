@@ -183,6 +183,19 @@ class TestScoreFontSizes:
 # Visual density scoring
 # ---------------------------------------------------------------------------
 
+class TestScoreFontSizesWeighted:
+    def test_compliance_is_weighted_by_characters(self, elderly_persona):
+        props = UIProperties(url="https://e.com", font_sizes=["10px", "18px"],
+                             font_size_weights={"10px": 5, "18px": 95})
+        earned, _, rec = _score_font_sizes(props, elderly_persona["preferences"])
+        assert earned == 95
+        assert rec is not None and "5%" in rec
+
+    def test_without_weights_keeps_distinct_size_behaviour(self, light_page_props, gen_z_persona):
+        earned, _, _ = _score_font_sizes(light_page_props, gen_z_persona["preferences"])
+        assert earned == 50
+
+
 class TestScoreVisualDensity:
     def test_density_in_range(self, dark_page_props):
         prefs = {"visual_density": "high"}
@@ -306,6 +319,61 @@ class TestCheckDealbreakers:
         assert triggered == []
 
 
+class TestContrastDealbreaker:
+    def test_low_contrast_uses_measured_ratio(self):
+        props = UIProperties(url="https://example.com", contrast_ratios=[2.1, 2.6, 8.0])
+        triggered = _check_dealbreakers(
+            props, ["low_contrast_text"], {"min_contrast_ratio": 4.5}
+        )
+        assert len(triggered) == 1
+        assert "2/3" in triggered[0]
+        assert "2.1" in triggered[0]
+
+    def test_few_colors_alone_no_longer_triggers(self):
+        props = UIProperties(
+            url="https://example.com",
+            colors=["rgb(0,0,0)"],
+            contrast_ratios=[14.0],
+        )
+        assert _check_dealbreakers(props, ["low_contrast_text"]) == []
+
+    def test_persona_min_ratio_is_respected(self):
+        props = UIProperties(url="https://example.com", contrast_ratios=[4.8])
+        assert _check_dealbreakers(
+            props, ["low_contrast_text"], {"min_contrast_ratio": 7.0}
+        )
+        assert not _check_dealbreakers(
+            props, ["low_contrast_text"], {"min_contrast_ratio": 4.5}
+        )
+
+
+class TestColorSchemeContrast:
+    def test_without_contrast_data_scheme_score_is_unchanged(
+        self, dark_page_props, gen_z_persona
+    ):
+        earned, _, rec = _score_dark_mode(dark_page_props, gen_z_persona["preferences"])
+        assert earned == 100
+        assert rec is None
+
+    def test_failing_contrast_lowers_the_dimension(self, gen_z_persona):
+        props = UIProperties(
+            url="https://example.com", is_dark_mode=True, contrast_ratios=[2.0, 2.5]
+        )
+        prefs = {**gen_z_persona["preferences"], "min_contrast_ratio": 4.5}
+        earned, _, rec = _score_dark_mode(props, prefs)
+        assert earned == 60
+        assert rec is not None and "contrast" in rec.lower()
+
+    def test_passing_contrast_keeps_full_marks(self, gen_z_persona):
+        props = UIProperties(
+            url="https://example.com", is_dark_mode=True, contrast_ratios=[7.0, 12.0]
+        )
+        prefs = {**gen_z_persona["preferences"], "min_contrast_ratio": 4.5}
+        earned, _, rec = _score_dark_mode(props, prefs)
+        assert earned == 100
+        assert rec is None
+
+
 # ---------------------------------------------------------------------------
 # Full scoring pipeline
 # ---------------------------------------------------------------------------
@@ -345,12 +413,12 @@ class TestScore:
         assert set(result["breakdown"].keys()) == expected_keys
 
     def test_dealbreaker_reduces_score(self, elderly_persona):
-        # Light page triggers elderly's dealbreakers (low_contrast_text with only 2 colors)
+        # Light page with genuinely failing contrast triggers low_contrast_text
         props = UIProperties(
             url="https://example.com",
             is_dark_mode=False,
             has_animations=True,  # triggers auto_playing_videos
-            colors=["rgb(0,0,0)", "rgb(255,255,255)"],  # only 2 colors
+            contrast_ratios=[2.1, 2.6],  # both below elderly's 4.5:1 floor
             text_density=0.1,  # below 0.15
         )
         result = score(props, elderly_persona)

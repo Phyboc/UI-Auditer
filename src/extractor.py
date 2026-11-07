@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from playwright.sync_api import sync_playwright
 
+from .contrast import ratios_from_pairs
+
 
 @dataclass
 class UIProperties:
@@ -21,8 +23,12 @@ class UIProperties:
     colors: list[str] = field(default_factory=list)
     fonts: list[str] = field(default_factory=list)
     font_sizes: list[str] = field(default_factory=list)
+    font_size_weights: dict[str, int] = field(default_factory=dict)
+    contrast_ratios: list[float] = field(default_factory=list)
     is_dark_mode: bool = False
     has_animations: bool = False
+    running_animations: int = 0
+    keyframe_animations: int = 0
     total_elements: int = 0
     max_dom_depth: int = 0
     buttons_count: int = 0
@@ -58,7 +64,7 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
             title = page.title()
 
             # Single JS call extracts everything — faster than multiple round trips
-            features = page.evaluate("""() => {
+            features = page.evaluate(r"""() => {
 
             // 1. COLORS
             const colors = new Set();
@@ -72,6 +78,63 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
                 if (border && border !== 'rgba(0, 0, 0, 0)') colors.add(border);
             });
 
+            // 1b. CONTRAST PAIRS — text colour vs effective background.
+            // The ratio is computed in Python (contrast.py) so it is testable.
+            const parseColor = (c) => {
+                const m = (c || '').match(/rgba?\(([^)]+)\)/);
+                if (!m) return null;
+                const p = m[1].split(/[,\s\/]+/).filter(Boolean).map(parseFloat);
+                if (p.length < 3 || p.some(isNaN)) return null;
+                return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1];
+            };
+            const over = (fg, bg) => {
+                const a = fg[3];
+                if (a >= 0.999) return fg;
+                return [
+                    fg[0] * a + bg[0] * (1 - a),
+                    fg[1] * a + bg[1] * (1 - a),
+                    fg[2] * a + bg[2] * (1 - a),
+                    1,
+                ];
+            };
+            const toCss = (c) => 'rgba(' + Math.round(c[0]) + ', ' + Math.round(c[1]) + ', '
+                + Math.round(c[2]) + ', ' + c[3] + ')';
+            const effectiveBg = (el) => {
+                let acc = null;
+                let cur = el;
+                while (cur) {
+                    const c = parseColor(getComputedStyle(cur).backgroundColor);
+                    if (c && c[3] > 0) {
+                        acc = acc ? over(acc, c) : c;
+                        if (acc[3] >= 0.999) return toCss(acc);
+                    }
+                    cur = cur.parentElement;
+                }
+                return acc ? toCss(over(acc, [255, 255, 255, 1])) : 'rgba(255, 255, 255, 1)';
+            };
+            const contrastPairs = [];
+            const seenContrast = new Set();
+            const textWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            let textNode;
+            while ((textNode = textWalker.nextNode()) && contrastPairs.length < 500) {
+                const value = (textNode.nodeValue || '').trim();
+                if (value.length < 3) continue;
+                const el = textNode.parentElement;
+                if (!el) continue;
+                const tag = el.tagName;
+                if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT'
+                    || tag === 'TEMPLATE') continue;
+                const style = getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden'
+                    || parseFloat(style.opacity) === 0) continue;
+                const fg = style.color;
+                const bg = effectiveBg(el);
+                const key = fg + '|' + bg;
+                if (seenContrast.has(key)) continue;
+                seenContrast.add(key);
+                contrastPairs.push([fg, bg]);
+            }
+
             // 2. FONTS
             const fonts = new Set();
             document.querySelectorAll('body *').forEach(el => {
@@ -82,31 +145,69 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
                 }
             });
 
-            // 3. FONT SIZES
-            const fontSizes = new Set();
-            document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, a, button, li').forEach(el => {
-                if (el.textContent.trim().length > 3) {
-                    fontSizes.add(getComputedStyle(el).fontSize);
+            // 3. FONT SIZES — weighted by visible character count
+            const fontSizeWeights = {};
+            document.querySelectorAll('body *').forEach(el => {
+                let own = '';
+                for (const child of el.childNodes) {
+                    if (child.nodeType === 3) own += child.nodeValue;
                 }
+                const text = own.trim();
+                if (text.length < 2 || el.offsetParent === null) return;
+                const style = getComputedStyle(el);
+                if (style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return;
+                const size = style.fontSize;
+                fontSizeWeights[size] = (fontSizeWeights[size] || 0) + text.length;
             });
+            const fontSizes = Object.keys(fontSizeWeights);
 
-            // 4. DARK MODE
+            // 4. DARK MODE — root first, body second, color-scheme as fallback
+            const alphaOf = (c) => {
+                const m = (c || '').match(/rgba?\(([^)]+)\)/);
+                if (!m) return 0;
+                const p = m[1].split(/[,\s\/]+/).filter(Boolean).map(parseFloat);
+                return p.length > 3 ? p[3] : 1;
+            };
+            const htmlBg = getComputedStyle(document.documentElement).backgroundColor;
             const bodyBg = getComputedStyle(document.body).backgroundColor;
-            const rgb = bodyBg.match(/\\d+/g) || [];
-            const isDark = rgb.length >= 3
-                && parseInt(rgb[0]) < 80
-                && parseInt(rgb[1]) < 80
-                && parseInt(rgb[2]) < 80;
+            const pageBg = alphaOf(htmlBg) > 0 ? htmlBg
+                : (alphaOf(bodyBg) > 0 ? bodyBg : 'rgb(255, 255, 255)');
+            const rgb = pageBg.match(/\d+/g) || [];
+            const brightness = rgb.length >= 3
+                ? (0.2126 * parseInt(rgb[0]) + 0.7152 * parseInt(rgb[1])
+                   + 0.0722 * parseInt(rgb[2])) / 255
+                : 1;
+            const schemeHint = getComputedStyle(document.documentElement).colorScheme || '';
+            const isDark = brightness < 0.35
+                || (alphaOf(htmlBg) === 0 && alphaOf(bodyBg) === 0
+                    && /\bdark\b/.test(schemeHint));
 
             // 5. ANIMATIONS
-            let hasAnimations = false;
+            // A CSS transition is a hover/focus style, not motion the user
+            // sees, so it no longer counts. Only running animations and
+            // declared keyframe animations are treated as motion.
+            let runningAnimations = 0;
+            if (document.getAnimations) {
+                document.getAnimations().forEach(a => {
+                    if (a.playState !== 'running') return;
+                    let duration = 0;
+                    try {
+                        const timing = a.effect && a.effect.getComputedTiming();
+                        duration = timing && typeof timing.duration === 'number'
+                            ? timing.duration : 0;
+                    } catch (e) { duration = 0; }
+                    if (duration > 100) runningAnimations++;
+                });
+            }
+            let keyframeAnimations = 0;
             document.querySelectorAll('body *').forEach(el => {
                 const s = getComputedStyle(el);
-                if (
-                    (s.animationName && s.animationName !== 'none') ||
-                    (s.transitionDuration && s.transitionDuration !== '0s')
-                ) { hasAnimations = true; }
+                if (s.animationName && s.animationName !== 'none'
+                    && parseFloat(s.animationDuration) > 0) {
+                    keyframeAnimations++;
+                }
             });
+            const hasAnimations = runningAnimations > 0 || keyframeAnimations > 0;
 
             // 6. DOM STRUCTURE
             const allElements = document.querySelectorAll('*');
@@ -128,22 +229,46 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
             ).length;
 
             // 8. TEXT DENSITY
-            const totalArea = document.body.offsetWidth * document.body.offsetHeight;
+            // Measured from text-node line boxes, so nested elements cannot be
+            // counted twice, clipped to the viewport and capped at 1.0.
+            const bodyRect = document.body.getBoundingClientRect();
+            const pageArea = Math.max(1, bodyRect.width * bodyRect.height);
             let textArea = 0;
-            document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, span').forEach(el => {
-                if (el.textContent.trim().length > 10 && el.offsetParent !== null) {
-                    const rect = el.getBoundingClientRect();
-                    textArea += rect.width * rect.height;
+            const densityWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            let densityNode;
+            while ((densityNode = densityWalker.nextNode())) {
+                const value = (densityNode.nodeValue || '').trim();
+                if (value.length < 2) continue;
+                const el = densityNode.parentElement;
+                if (!el) continue;
+                const tag = el.tagName;
+                if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT'
+                    || tag === 'TEMPLATE') continue;
+                const style = getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden'
+                    || parseFloat(style.opacity) === 0) continue;
+                const range = document.createRange();
+                range.selectNodeContents(densityNode);
+                const rects = range.getClientRects();
+                for (let i = 0; i < rects.length; i++) {
+                    const r = rects[i];
+                    if (r.width <= 0 || r.height <= 0) continue;
+                    if (r.bottom < 0 || r.top > window.innerHeight) continue;
+                    textArea += r.width * r.height;
                 }
-            });
-            const textDensity = totalArea > 0 ? textArea / totalArea : 0;
+            }
+            const textDensity = Math.min(1, textArea / pageArea);
 
             return {
                 colors:         [...colors],
+                contrast_pairs: contrastPairs,
                 fonts:          [...fonts],
                 font_sizes:     [...fontSizes],
+                font_size_weights: fontSizeWeights,
                 is_dark_mode:   isDark,
                 has_animations: hasAnimations,
+                running_animations: runningAnimations,
+                keyframe_animations: keyframeAnimations,
                 total_elements: allElements.length,
                 max_dom_depth:  maxDepth,
                 buttons_count:  buttons,
@@ -152,6 +277,9 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
                 text_density:   textDensity,
             };
         }""")
+
+            pairs = features.pop("contrast_pairs", [])
+            features["contrast_ratios"] = ratios_from_pairs(pairs)
 
         finally:
             browser.close()

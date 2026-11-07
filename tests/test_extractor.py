@@ -23,6 +23,10 @@ class TestUIProperties:
         assert props.links_count == 0
         assert props.inputs_count == 0
         assert props.text_density == 0.0
+        assert props.contrast_ratios == []
+        assert props.font_size_weights == {}
+        assert props.running_animations == 0
+        assert props.keyframe_animations == 0
 
     def test_custom_values(self):
         props = UIProperties(
