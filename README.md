@@ -37,6 +37,7 @@
   - [Custom Output Path](#custom-output-path)
   - [JSON Output](#json-output)
 - [Scoring Dimensions](#-scoring-dimensions)
+- [Measurement & Limitations](#-measurement--limitations)
 - [Testing](#-testing)
 - [Project Structure](#-project-structure)
 - [Pipeline](#-pipeline)
@@ -50,7 +51,7 @@
 
 **UI‑Auditer** is a developer‑friendly CLI tool that bridges the gap between shipping code and knowing whether it *feels right* for your users. Point it at any URL — local dev server, staging, or production — tell it who your audience is, and get back a scored, dimension‑by‑dimension report with specific recommendations.
 
-Behind the scenes, it launches a **headless Chromium browser** (via Playwright) to render pages exactly as a real user would see them — including React, Vue, Next.js, Tailwind, or any JavaScript‑driven framework. Computed styles are extracted directly from the browser engine, then compared against **research‑backed audience personas** in a rule‑based heuristic scorer. Optionally, an **LLM** can generate concrete CSS fix suggestions tailored to the selected persona.
+Behind the scenes, it launches a **headless Chromium browser** (via Playwright) to render pages exactly as a real user would see them — including React, Vue, Next.js, Tailwind, or any JavaScript‑driven framework. Computed styles are extracted directly from the browser engine, then compared against **literature-informed audience personas** in a rule‑based heuristic scorer. Optionally, an **LLM** can generate concrete CSS fix suggestions tailored to the selected persona.
 
 ---
 
@@ -59,8 +60,9 @@ Behind the scenes, it launches a **headless Chromium browser** (via Playwright) 
 | Capability | Description |
 |---|---|
 | 🖥️ **Real Browser Rendering** | Full Playwright‑powered Chromium — not static HTML parsing. Sees what users see. |
-| 🧠 **Audience Personas** | 5 built‑in, research‑backed personas (Gen‑Z, Elderly, Corporate, Minimalist, Neurodivergent) — each with unique preferences & dealbreakers. |
-| 📊 **Multi‑Dimension Scoring** | Scores across Color Scheme, Typography, Visual Density, Motion, and Interactivity — with an overall letter grade (A–F). |
+| 🧠 **Audience Personas** | 5 built‑in, literature-informed personas (Gen‑Z, Elderly, Corporate, Minimalist, Neurodivergent) — each with unique preferences & dealbreakers. |
+| 📊 **Multi-Dimension Scoring** | Colour scheme (including measured contrast), typography, visual density, motion, and interactivity — with an overall letter grade (A–F). |
+| 🎨 **Measured Contrast** | WCAG 2.1 ratios from real text/background pairs, checked against each persona's `min_contrast_ratio`. |
 | 🚩 **Dealbreaker System** | Audience‑specific red flags that instantly penalise the score (e.g., auto‑playing video for neurodivergent users). |
 | 🎨 **Beautiful Terminal Reports** | Rich‑powered tables, color bars, and responsive layouts — looks great in any terminal width. |
 | 🤖 **AI‑Generated CSS Fixes** | Pass `--fix` to get audience‑aware CSS suggestions from an LLM (OpenRouter), saved to a CSS file. |
@@ -91,6 +93,7 @@ Behind the scenes, it launches a **headless Chromium browser** (via Playwright) 
 |---|---|---|
 | **CLI** | [Click](https://click.palletsprojects.com/) | Argument parsing, command orchestration |
 | **Browser** | [Playwright](https://playwright.dev/) | Headless Chromium rendering & computed style extraction |
+| **Measurement** | Python (`contrast.py`) | Colour parsing, WCAG luminance and contrast ratios |
 | **Scoring** | Python (rule‑based heuristics) | Compares extracted properties against persona JSON |
 | **Reporting** | [Rich](https://rich.readthedocs.io/) | Terminal UI — tables, panels, colour bars |
 | **AI Advisor** | [Requests](https://requests.readthedocs.io/) | HTTP calls to OpenRouter / Groq LLM API |
@@ -169,13 +172,13 @@ ui-auditer https://www.example.com --persona corporate
 
 ### Personas
 
-| Slug | Audience | Color Scheme | Font Range | Density | Animations |
-|---|---|---|---|---|---|
-| `gen_z` | Gen‑Z Tech Early Adopter | Dark mode preferred | 12–16px | High | ✅ Wants them |
-| `elderly` | Elderly Digital Novice | Light mode preferred | 16–24px | Low | ❌ Avoid |
-| `corporate` | Corporate Power User | Neutral / system | 11–14px | High | ❌ Avoid |
-| `minimalist` | Minimalist Creative | Monochromatic | 13–18px | Very Low | ✅ Subtle |
-| `neurodivergent` | Neurodivergent Focus Optimizer | Pastel / low‑stim | 13–16px | Moderate | ❌ Avoid |
+| Slug | Audience | Color Scheme | Font Range | Density | Animations | Min contrast |
+|---|---|---|---|---|---|---|
+| `gen_z` | Gen‑Z Tech Early Adopter | Dark mode preferred | 12–16px | High | ✅ Wants them | 4.5:1 |
+| `elderly` | Elderly Digital Novice | Light mode preferred | 16–24px | Low | ❌ Avoid | 7.0:1 |
+| `corporate` | Corporate Power User | Neutral / system | 11–14px | High | ❌ Avoid | 4.5:1 |
+| `minimalist` | Minimalist Creative | Monochromatic | 13–18px | Very Low | ✅ Subtle | 4.5:1 |
+| `neurodivergent` | Neurodivergent Focus Optimizer | Pastel / low‑stim | 13–16px | Moderate | ❌ Avoid | 5.0:1 |
 
 Each persona includes **dealbreakers** — patterns that tank the score (e.g., auto‑playing videos for neurodivergent users, excessive whitespace for corporate).
 
@@ -222,6 +225,7 @@ Example output:
     "is_dark_mode": false,
     "fonts": ["Arial", "Helvetica"],
     "font_sizes": ["14px", "16px"],
+    "contrast_ratios": [21.0, 12.4, 4.8],
     "text_density": 0.34,
     "total_elements": 218
   },
@@ -246,9 +250,9 @@ Example output:
 | Dimension | Weight | What's Checked |
 |---|---|---|
 | 🎨 **Color Scheme** | Equal | Dark/light mode match **plus measured WCAG 2.1 contrast** against the persona's `min_contrast_ratio` |
-| 🔤 **Typography** | Equal | Font size range against persona's min/max requirements (e.g., ≥16px for elderly) |
-| 📐 **Visual Density** | Equal | Text‑area / page‑area ratio vs expected density level (very_low → high) |
-| 🌀 **Motion** | Equal | Presence/absence of CSS animations & transitions vs persona preference |
+| 🔤 **Typography** | Equal | Font sizes against persona min/max, weighted by visible character count |
+| 📐 **Visual Density** | Equal | Text-node area / page area vs expected density (very_low → high), capped at 1.0 |
+| 🌀 **Motion** | Equal | Running and keyframe animations vs persona preference; hover transitions are ignored |
 | 🔘 **Interactivity** | Equal | Button + link count vs expected interface complexity for the persona |
 | 🚩 **Dealbreakers** | Penalty | Each triggered dealbreaker docks **5 points** from the final score |
 
@@ -261,6 +265,27 @@ The final score is the **average of the five dimension scores** (20% each, 0–1
 | **C** | 55–69 |
 | **D** | 40–54 |
 | **F** | 0–39 |
+
+---
+
+## 📏 Measurement & Limitations
+
+Every dimension is computed from the rendered page rather than estimated from the HTML:
+
+| Signal | How it is measured |
+|---|---|
+| **Contrast** | For each visible text style, the text colour is paired with the effective background (walking up through transparent ancestors). WCAG 2.1 relative luminance gives a ratio, checked against the persona's `min_contrast_ratio`. The colour-scheme score is 60% dark/light match and 40% contrast compliance. |
+| **Typography** | Font sizes are weighted by visible character count, so a small footer cannot outweigh body copy. |
+| **Density** | Sum of text-node line boxes divided by page area, clipped to the viewport and capped at 1.0, so nested elements are not counted twice. |
+| **Motion** | `document.getAnimations()` plus declared keyframe animations. CSS transitions (hover/focus styling) are ignored. |
+| **Dark mode** | Background resolved from `<html>` first, then `<body>`, with `color-scheme` as a fallback. |
+
+### Known limitations
+
+- Large text (≥24px, or ≥18.66px bold) is held to the same ratio as body text; the WCAG 3:1 large-text exception is not applied.
+- Contrast is sampled per text style, not per element, and there is no axe-core cross-check yet.
+- Personas are literature-informed, not empirically validated; the dimension weights are hand-set rather than calibrated against human ratings.
+- One page per run — no crawl, screenshots, or cross-persona comparison yet (`--compare` is planned).
 
 ---
 
@@ -306,8 +331,10 @@ ui-auditer/
 ├── 📁 tests/
 │   ├── 📦 __init__.py
 │   ├── 🔧 conftest.py        # Shared test fixtures
-│   ├── 🧪 test_scorer.py     # Scorer unit tests
-│   └── 🧪 test_extractor.py  # Extractor smoke tests
+│   ├── 🧪 test_scorer.py     # Scoring rules, contrast blending, dealbreakers
+│   ├── 🧪 test_contrast.py   # WCAG luminance and ratio maths
+│   ├── 🧪 test_extractor.py  # UIProperties dataclass
+│   ├── 🧪 test_advisor.py    # LLM advisor parsing and CSS output
 ├── 🔒 .env                   # API keys (gitignored)
 ├── 🔒 .gitignore
 └── 📖 README.md              # You are here ✨
@@ -348,19 +375,22 @@ URL  ──▶  🌐 extractor.py
 ## 🗺 Roadmap
 
 ### ✅ Implemented
-- [x] Playwright‑based UI property extraction (colors, fonts, density, DOM depth, animations, interactivity)
-- [x] 5 research‑backed audience personas with preferences & dealbreakers
+- [x] Playwright-based extraction — computed styles, contrast pairs, text-node density, weighted font sizes, DOM depth, animations, interactivity
+- [x] Measured WCAG 2.1 contrast with per-persona minimum ratios
+- [x] Text-weighted typography and nested-safe density measurement
+- [x] 5 literature-informed audience personas with preferences & dealbreakers
 - [x] Rule‑based heuristic scoring engine (5 dimensions + dealbreaker penalties)
 - [x] Responsive Rich terminal reporter (adapts to wide & narrow terminals)
 - [x] `--json` output flag for automation / CI pipelines (Rich output suppressed for clean piping)
 - [x] `--fix` flag: AI‑generated CSS fix suggestions via OpenRouter / Groq
 - [x] `--output` / `-o` flag: custom CSS fix file path
 - [x] pip‑installable package with `ui-auditer` CLI entry point
-- [x] WCAG 2.1 contrast measurement — text/background pairs, luminance maths, persona minimum ratio
 - [x] 93 unit tests
 
 ### 🔜 Planned
 - [ ] `--compare` flag — score against all 5 personas in a single run
+- [ ] 🔍 axe-core cross-check for contrast and tap targets
+- [ ] 📊 Calibrate heuristic weights against human ratings (pairwise study)
 - [ ] 📸 Screenshot capture for visual documentation in reports
 - [ ] 🖥️ Interactive mode — real‑time persona switching
 - [ ] 🤖 ML model integration (replace rule functions with a trained classifier)
