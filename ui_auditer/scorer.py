@@ -9,7 +9,32 @@ and returns structured scores + recommendations.
 import json
 import re
 from pathlib import Path
+
 from .extractor import UIProperties
+
+# ---------------------------------------------------------------------------
+# Dealbreaker thresholds (module-level so they are easy to calibrate later)
+# ---------------------------------------------------------------------------
+LARGE_TEXT_BLOCK_CHARS = 800      # one text node longer than this is a wall of text
+SPARSE_TEXT_DENSITY = 0.15        # below this the page is mostly whitespace
+CLUTTERED_ELEMENT_COUNT = 300     # above this the DOM is "cluttered"
+INFINITE_SCROLL_RATIO = 6.0       # page taller than 6 viewports reads as a feed
+
+# Dealbreakers this module can actually observe. Every slug declared in
+# persona.json must appear here — tests enforce the match so a persona can
+# never declare a red flag that is silently ignored.
+HANDLED_DEALBREAKERS = frozenset({
+    "low_contrast_text",
+    "large_blocks_of_text",
+    "excessive_whitespace_padding",
+    "cluttered_sidebar_layouts",
+    "auto_playing_videos",
+    "flashing_banner_animations",
+    "infinite_scrolling_feeds",
+    "pop_up_advertisements",
+    "unskippable_onboarding_modals",
+    "hidden_navigation",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +129,10 @@ def _score_dark_mode(props: UIProperties, prefs: dict) -> tuple[int, int, str | 
     extractor supplied contrast ratios: 60% scheme match, 40% contrast
     compliance against the persona's ``min_contrast_ratio``. Properties
     without contrast data keep the original scheme-only behaviour.
+
+    This dimension already penalises a scheme mismatch heavily, so personas
+    do not also declare a ``light_mode_only_design`` dealbreaker — that would
+    dock the same property twice.
     """
     scheme = prefs.get("color_scheme", "")
     wants_dark = "dark" in scheme
@@ -254,11 +283,15 @@ def _score_animations(props: UIProperties, prefs: dict) -> tuple[int, int, str |
 
 def _score_interactivity(props: UIProperties, prefs: dict) -> tuple[int, int, str | None]:
     """
-    Higher interactivity (more buttons/links) scores well for high-density personas.
-    Lower interactivity scores well for minimalist/low-density personas.
+    How many things the user can act on (buttons + links + form controls)
+    compared with the interface complexity this audience expects.
+
+    Uses its own ``interaction_density`` preference, falling back to
+    ``visual_density`` for personas that do not declare one, so a single
+    preference does not silently drive two dimensions.
     """
-    density_pref = prefs.get("visual_density", "moderate")
-    total_interactive = props.buttons_count + props.links_count
+    density_pref = prefs.get("interaction_density") or prefs.get("visual_density", "moderate")
+    total_interactive = props.buttons_count + props.links_count + props.inputs_count
 
     if density_pref in ("high",):
         # Expect at least 10 interactive elements
@@ -293,13 +326,14 @@ def _check_dealbreakers(
     """
     Map dealbreaker strings from the persona JSON to observable properties.
     Returns a list of triggered dealbreaker messages.
+
+    Every slug handled here is listed in HANDLED_DEALBREAKERS; anything else
+    is ignored. Signals the DOM/CSS cannot observe are deliberately absent
+    from persona.json rather than declared and skipped.
     """
     triggered = []
     db_set = set(dealbreakers)
     prefs = prefs or {}
-
-    if "light_mode_only_design" in db_set and not props.is_dark_mode:
-        triggered.append("light_mode_only_design — page uses light background")
 
     if "low_contrast_text" in db_set:
         ratios = getattr(props, "contrast_ratios", None) or []
@@ -311,20 +345,54 @@ def _check_dealbreakers(
                 f"below {min_ratio:g}:1 (worst {min(failing):g}:1)"
             )
 
-    if "excessive_whitespace_padding" in db_set and props.text_density < 0.15:
+    if "large_blocks_of_text" in db_set and props.longest_text_block >= LARGE_TEXT_BLOCK_CHARS:
+        triggered.append(
+            f"large_blocks_of_text — a single text block runs "
+            f"{props.longest_text_block} characters"
+        )
+
+    if "excessive_whitespace_padding" in db_set and props.text_density < SPARSE_TEXT_DENSITY:
         triggered.append(
             f"excessive_whitespace_padding — text density is only {props.text_density:.0%}"
         )
 
-    if "auto_playing_videos" in db_set and props.has_animations:
-        triggered.append("has_animations — check for auto-playing video or motion")
-
-    if "flashing_banner_animations" in db_set and props.has_animations:
-        triggered.append("has_animations — verify no flashing/strobing elements exist")
-
-    if "cluttered_sidebar_layouts" in db_set and props.total_elements > 300:
+    if "cluttered_sidebar_layouts" in db_set and props.total_elements > CLUTTERED_ELEMENT_COUNT:
         triggered.append(
-            f"cluttered_sidebar_layouts — {props.total_elements} DOM elements suggests high complexity"
+            f"cluttered_sidebar_layouts — {props.total_elements} DOM elements "
+            "suggests high complexity"
+        )
+
+    if "auto_playing_videos" in db_set and props.autoplay_media > 0:
+        triggered.append(
+            f"auto_playing_videos — {props.autoplay_media} autoplaying media element(s)"
+        )
+
+    if "flashing_banner_animations" in db_set and props.keyframe_animations > 0:
+        triggered.append(
+            f"flashing_banner_animations — {props.keyframe_animations} element(s) run "
+            "keyframe animations; verify none flash or strobe"
+        )
+
+    if "infinite_scrolling_feeds" in db_set and props.scroll_depth_ratio >= INFINITE_SCROLL_RATIO:
+        triggered.append(
+            f"infinite_scrolling_feeds — page is {props.scroll_depth_ratio:.1f}x "
+            "the viewport height"
+        )
+
+    if "pop_up_advertisements" in db_set and props.blocking_overlay:
+        triggered.append(
+            "pop_up_advertisements — a fixed overlay covers at least half the viewport on load"
+        )
+
+    if "unskippable_onboarding_modals" in db_set and props.blocking_overlay:
+        triggered.append(
+            "unskippable_onboarding_modals — a fixed overlay covers at least half "
+            "the viewport on load"
+        )
+
+    if "hidden_navigation" in db_set and props.hidden_navigation:
+        triggered.append(
+            "hidden_navigation — navigation is collapsed behind a toggle at desktop width"
         )
 
     return triggered

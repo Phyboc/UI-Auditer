@@ -1,5 +1,6 @@
-import sys
 import io
+import sys
+
 import click
 from rich.console import Console
 
@@ -7,12 +8,14 @@ from rich.console import Console
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
-from .extractor import extract
-from .scorer import load_all_personas, find_persona, score
-from .reporter import print_report
+
 from .advisor import get_suggestions, write_css_fix_file
+from .extractor import extract
+from .reporter import print_report
+from .scorer import find_persona, load_all_personas, score
 
 console = Console()
+
 
 @click.command()
 @click.argument("url")
@@ -46,15 +49,26 @@ def main(url, persona, timeout, output_json, suggest_fix, output_path):
     with console.status(f"[cyan]Rendering {url}…[/cyan]"):
         try:
             props = extract(url, timeout=timeout)
+        except RuntimeError as e:
+            # Setup problems (Playwright / Chromium missing) already carry the fix.
+            console.print(f"[red]Cannot run the audit:[/red] {e}")
+            sys.exit(1)
         except Exception as e:
-            console.print(f"[red]Extraction failed:[/red] {e}")
+            message = str(e)
+            if "Executable doesn't exist" in message or "playwright install" in message:
+                console.print(
+                    "[red]Chromium is not installed.[/red] "
+                    "Run: [bold]playwright install chromium[/bold]"
+                )
+            else:
+                console.print(f"[red]Extraction failed:[/red] {message}")
             sys.exit(1)
 
     result = score(props, persona_data)
 
     llm_suggestions = None
     if suggest_fix and result:
-        with console.status(f"[yellow]Asking LLM for fix suggestions…[/yellow]"):
+        with console.status("[yellow]Asking LLM for fix suggestions…[/yellow]"):
             try:
                 llm_suggestions = get_suggestions(props, persona_data, result)
                 css_path = write_css_fix_file(llm_suggestions, output_path=output_path)
@@ -62,7 +76,6 @@ def main(url, persona, timeout, output_json, suggest_fix, output_path):
             except Exception as e:
                 console.print(f"[yellow]⚠ LLM fix failed:[/yellow] {e}")
                 console.print("[dim]Set LLM_API_KEY in your .env file to use AI suggestions.[/dim]")
-
 
     if output_json:
         import json as _json
@@ -74,8 +87,6 @@ def main(url, persona, timeout, output_json, suggest_fix, output_path):
         }, indent=2))
     else:
         print_report(props, result, suggestions=llm_suggestions)
-
-    
 
 
 if __name__ == "__main__":

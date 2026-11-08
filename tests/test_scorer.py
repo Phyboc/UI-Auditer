@@ -1,9 +1,9 @@
-"""Tests for src.scorer — persona loading, slug matching, and scoring functions."""
+"""Tests for ui_auditer.scorer — persona loading, slug matching, and scoring functions."""
 
-import json
 from pathlib import Path
-from src.extractor import UIProperties
-from src.scorer import (
+from ui_auditer.extractor import UIProperties
+from ui_auditer.scorer import (
+    HANDLED_DEALBREAKERS,
     load_all_personas,
     find_persona,
     _slugify,
@@ -29,7 +29,7 @@ class TestLoadAllPersonas:
         assert len(personas) == 5
 
     def test_loads_from_explicit_path(self):
-        persona_path = str(Path(__file__).resolve().parent.parent / "src" / "persona.json")
+        persona_path = str(Path(__file__).resolve().parent.parent / "ui_auditer" / "persona.json")
         personas = load_all_personas(persona_path)
         assert len(personas) == 5
 
@@ -292,16 +292,11 @@ class TestScoreInteractivity:
 # ---------------------------------------------------------------------------
 
 class TestCheckDealbreakers:
-    def test_light_mode_triggered(self):
+    def test_scheme_mismatch_is_not_a_duplicate_dealbreaker(self):
+        # The colour-scheme dimension already penalises a light page for a
+        # dark-mode persona; a separate dealbreaker would charge it twice.
         props = UIProperties(url="https://example.com", is_dark_mode=False)
-        triggered = _check_dealbreakers(props, ["light_mode_only_design"])
-        assert len(triggered) == 1
-        assert "light_mode" in triggered[0]
-
-    def test_light_mode_not_triggered_when_dark(self):
-        props = UIProperties(url="https://example.com", is_dark_mode=True)
-        triggered = _check_dealbreakers(props, ["light_mode_only_design"])
-        assert len(triggered) == 0
+        assert _check_dealbreakers(props, ["light_mode_only_design"]) == []
 
     def test_cluttered_layout_triggered(self):
         props = UIProperties(url="https://example.com", total_elements=500)
@@ -417,7 +412,7 @@ class TestScore:
         props = UIProperties(
             url="https://example.com",
             is_dark_mode=False,
-            has_animations=True,  # triggers auto_playing_videos
+            autoplay_media=1,  # triggers auto_playing_videos
             contrast_ratios=[2.1, 2.6],  # both below elderly's 4.5:1 floor
             text_density=0.1,  # below 0.15
         )
@@ -429,3 +424,79 @@ class TestScore:
     def test_dark_site_scores_high_for_gen_z(self, dark_page_props, gen_z_persona):
         result = score(dark_page_props, gen_z_persona)
         assert result["overall_score"] >= 70
+
+
+# ---------------------------------------------------------------------------
+# Dealbreaker coverage and the new observable signals
+# ---------------------------------------------------------------------------
+
+class TestDealbreakerCoverage:
+    def test_every_declared_dealbreaker_is_handled(self):
+        declared = {d for p in load_all_personas() for d in p["dealbreakers"]}
+        assert declared <= HANDLED_DEALBREAKERS
+
+    def test_no_persona_duplicates_the_scheme_rule(self):
+        for p in load_all_personas():
+            assert "light_mode_only_design" not in p["dealbreakers"]
+
+
+class TestNewDealbreakerSignals:
+    def test_large_text_block(self):
+        props = UIProperties(url="https://e.com", longest_text_block=1200)
+        triggered = _check_dealbreakers(props, ["large_blocks_of_text"])
+        assert len(triggered) == 1 and "1200" in triggered[0]
+
+    def test_normal_text_block_is_fine(self):
+        props = UIProperties(url="https://e.com", longest_text_block=200)
+        assert _check_dealbreakers(props, ["large_blocks_of_text"]) == []
+
+    def test_autoplay_media(self):
+        props = UIProperties(url="https://e.com", autoplay_media=2)
+        assert len(_check_dealbreakers(props, ["auto_playing_videos"])) == 1
+
+    def test_css_motion_alone_is_not_autoplay(self):
+        props = UIProperties(url="https://e.com", has_animations=True, autoplay_media=0)
+        assert _check_dealbreakers(props, ["auto_playing_videos"]) == []
+
+    def test_infinite_scroll(self):
+        props = UIProperties(url="https://e.com", scroll_depth_ratio=9.5)
+        assert len(_check_dealbreakers(props, ["infinite_scrolling_feeds"])) == 1
+
+    def test_short_page_is_not_a_feed(self):
+        props = UIProperties(url="https://e.com", scroll_depth_ratio=2.0)
+        assert _check_dealbreakers(props, ["infinite_scrolling_feeds"]) == []
+
+    def test_blocking_overlay_triggers_popup(self):
+        props = UIProperties(url="https://e.com", blocking_overlay=True)
+        assert len(_check_dealbreakers(props, ["pop_up_advertisements"])) == 1
+
+    def test_blocking_overlay_triggers_onboarding_modal(self):
+        props = UIProperties(url="https://e.com", blocking_overlay=True)
+        assert len(_check_dealbreakers(props, ["unskippable_onboarding_modals"])) == 1
+
+    def test_hidden_navigation(self):
+        props = UIProperties(url="https://e.com", hidden_navigation=True)
+        assert len(_check_dealbreakers(props, ["hidden_navigation"])) == 1
+
+    def test_flashing_banner_uses_keyframes_only(self):
+        props = UIProperties(url="https://e.com", has_animations=True, keyframe_animations=0)
+        assert _check_dealbreakers(props, ["flashing_banner_animations"]) == []
+
+
+class TestInteractivitySignals:
+    def test_form_controls_count_as_interactive(self):
+        props = UIProperties(url="https://e.com", buttons_count=1, links_count=1, inputs_count=8)
+        earned, _, _ = _score_interactivity(props, {"interaction_density": "high"})
+        assert earned == 100
+
+    def test_interaction_density_overrides_visual_density(self):
+        props = UIProperties(url="https://e.com", buttons_count=2, links_count=2)
+        earned, _, _ = _score_interactivity(
+            props, {"visual_density": "very_low", "interaction_density": "high"}
+        )
+        assert earned == 40
+
+    def test_falls_back_to_visual_density(self):
+        props = UIProperties(url="https://e.com", buttons_count=2, links_count=3)
+        earned, _, _ = _score_interactivity(props, {"visual_density": "high"})
+        assert earned == 50

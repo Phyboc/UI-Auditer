@@ -1,6 +1,6 @@
 """Tests for WCAG contrast maths."""
 
-from src.contrast import (
+from ui_auditer.contrast import (
     contrast_ratio,
     parse_css_color,
     ratios_from_pairs,

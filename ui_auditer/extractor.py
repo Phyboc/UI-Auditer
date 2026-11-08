@@ -7,12 +7,14 @@ Works with React, Vue, Tailwind, Next.js — anything a browser can render.
 Install:
     pip install playwright
     playwright install chromium
+
+Run the extractor on its own:
+    python -m ui_auditer.extractor https://yoursite.com
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from playwright.sync_api import sync_playwright
 
 from .contrast import ratios_from_pairs
 
@@ -36,6 +38,12 @@ class UIProperties:
     inputs_count: int = 0
     text_density: float = 0.0
     title: str = ""
+    # Dealbreaker signals — each one is observable from the rendered page.
+    longest_text_block: int = 0
+    scroll_depth_ratio: float = 0.0
+    blocking_overlay: bool = False
+    autoplay_media: int = 0
+    hidden_navigation: bool = False
 
 
 def extract(url: str, timeout: int = 15000) -> UIProperties:
@@ -49,12 +57,34 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
 
     Returns:
         UIProperties dataclass with all extracted values
+
+    Raises:
+        RuntimeError: for the two common setup failures (Playwright missing,
+            Chromium not downloaded) with the command that fixes them.
     """
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
 
+    # Imported here so the CLI, scorer and reporter can be imported (and
+    # --help can run) on a machine where Playwright is not installed yet.
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError(
+            "Playwright is not installed. Run: pip install playwright "
+            "then: playwright install chromium"
+        ) from exc
+
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        try:
+            browser = p.chromium.launch(headless=True)
+        except Exception as exc:
+            if "Executable doesn't exist" in str(exc):
+                raise RuntimeError(
+                    "Chromium is not installed for Playwright. "
+                    "Run: playwright install chromium"
+                ) from exc
+            raise
         try:
             page = browser.new_page()
 
@@ -259,6 +289,53 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
             }
             const textDensity = Math.min(1, textArea / pageArea);
 
+            // 9. LONGEST TEXT BLOCK — proxy for a wall of text
+            let longestTextBlock = 0;
+            const blockWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            let blockNode;
+            while ((blockNode = blockWalker.nextNode())) {
+                const tag = blockNode.parentElement ? blockNode.parentElement.tagName : '';
+                if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT'
+                    || tag === 'TEMPLATE') continue;
+                const value = (blockNode.nodeValue || '').trim();
+                if (value.length > longestTextBlock) longestTextBlock = value.length;
+            }
+
+            // 10. SCROLL DEPTH — proxy for an endlessly scrolling feed
+            const viewportHeight = window.innerHeight || 1;
+            const scrollDepthRatio = document.documentElement.scrollHeight / viewportHeight;
+
+            // 11. BLOCKING OVERLAY — fixed/sticky layer covering half the viewport
+            let blockingOverlay = false;
+            const viewportArea = (window.innerWidth || 1) * viewportHeight;
+            document.querySelectorAll('body *').forEach(el => {
+                if (blockingOverlay) return;
+                const s = getComputedStyle(el);
+                if (s.position !== 'fixed' && s.position !== 'sticky') return;
+                if (s.display === 'none' || s.visibility === 'hidden'
+                    || parseFloat(s.opacity) === 0) return;
+                const z = parseInt(s.zIndex, 10);
+                if (!isNaN(z) && z < 100) return;
+                const r = el.getBoundingClientRect();
+                if (r.width * r.height >= 0.5 * viewportArea) blockingOverlay = true;
+            });
+
+            // 12. AUTOPLAY MEDIA
+            const autoplay = new Set();
+            document.querySelectorAll('video[autoplay], audio[autoplay]')
+                .forEach(el => autoplay.add(el));
+            document.querySelectorAll('video').forEach(v => {
+                if (!v.paused && !v.ended) autoplay.add(v);
+            });
+
+            // 13. HIDDEN NAVIGATION — nav exists but is collapsed at desktop width
+            let hiddenNavigation = false;
+            document.querySelectorAll('nav, [role="navigation"]').forEach(el => {
+                const s = getComputedStyle(el);
+                if (s.display === 'none' || s.visibility === 'hidden'
+                    || el.getBoundingClientRect().width === 0) hiddenNavigation = true;
+            });
+
             return {
                 colors:         [...colors],
                 contrast_pairs: contrastPairs,
@@ -275,6 +352,11 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
                 links_count:    links,
                 inputs_count:   inputs,
                 text_density:   textDensity,
+                longest_text_block: longestTextBlock,
+                scroll_depth_ratio: scrollDepthRatio,
+                blocking_overlay: blockingOverlay,
+                autoplay_media: autoplay.size,
+                hidden_navigation: hiddenNavigation,
             };
         }""")
 
@@ -287,18 +369,24 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
     return UIProperties(url=url, title=title, **features)
 
 
-# Quick test — run: python extractor.py https://yoursite.com
+# Quick test — run: python -m ui_auditer.extractor https://yoursite.com
 if __name__ == "__main__":
     import sys
+
     test_url = sys.argv[1] if len(sys.argv) > 1 else "https://github.com"
     print(f"Extracting from {test_url}...\n")
     props = extract(test_url)
     print(f"Title:        {props.title}")
     print(f"Dark mode:    {props.is_dark_mode}")
     print(f"Animations:   {props.has_animations}")
-    print(f"Colors found: {len(props.colors)} → {props.colors[:3]}")
+    print(f"Colors found: {len(props.colors)}")
     print(f"Fonts:        {props.fonts}")
     print(f"Font sizes:   {props.font_sizes}")
     print(f"Elements:     {props.total_elements}, depth {props.max_dom_depth}")
     print(f"Interactive:  {props.buttons_count} buttons, {props.links_count} links, {props.inputs_count} inputs")
     print(f"Text density: {props.text_density:.1%}")
+    print(f"Longest text block: {props.longest_text_block} chars")
+    print(f"Scroll depth:       {props.scroll_depth_ratio:.1f}x viewport")
+    print(f"Blocking overlay:   {props.blocking_overlay}")
+    print(f"Autoplay media:     {props.autoplay_media}")
+    print(f"Hidden navigation:  {props.hidden_navigation}")

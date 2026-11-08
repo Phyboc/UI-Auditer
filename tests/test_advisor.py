@@ -1,8 +1,8 @@
-"""Tests for src.advisor — LLM response parsing and fallback suggestions."""
+"""Tests for ui_auditer.advisor — LLM response parsing and fallback suggestions."""
 
 import pytest
-from src.advisor import _parse_json, _build_fallback_suggestions
-from src.extractor import UIProperties
+from ui_auditer.advisor import _parse_json, _build_fallback_suggestions
+from ui_auditer.extractor import UIProperties
 
 
 class TestParseJson:

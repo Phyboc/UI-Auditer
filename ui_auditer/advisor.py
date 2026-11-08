@@ -113,7 +113,7 @@ def _parse_json(raw: str) -> dict:
     if start != -1 and end > start:
         return json.loads(raw[start : end + 1])
 
-    raise ValueError(f"No valid JSON found in LLM response:")
+    raise ValueError("No valid JSON found in LLM response:")
 
 def get_suggestions(props: UIProperties, persona: dict, result: dict) -> dict:
     """

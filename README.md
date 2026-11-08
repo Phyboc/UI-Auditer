@@ -112,35 +112,54 @@ Behind the scenes, it launches a **headless Chromium browser** (via Playwright) 
 
 ### Installation
 
+Everything runs from this checkout. The package is not published to PyPI, so there is no
+`pip install ui-auditer` step — you install **this folder** and its dependencies.
+
 ```bash
-# 1. Clone the repository
-git clone https://github.com/yourusername/ui-auditer.git
-cd ui-auditer
+# 1. Create and activate an isolated environment (recommended)
+python -m venv .venv
+source .venv/Scripts/activate     # Windows (Git Bash)
+# source .venv/bin/activate       # macOS / Linux
 
-# 2. Install the package (creates the `ui-auditer` CLI command)
-pip install .
+# 2. Install this checkout (the package comes from the working tree, not an index)
+pip install -e ".[dev]"
 
-# 3. Install Chromium browser (one-time)
+# 3. Download the Chromium build Playwright drives (one-time, ~120 MB)
 playwright install chromium
 
-# 4. Verify it works
+# 4. Verify
 ui-auditer https://example.com --persona corporate
 ```
 
-**Development install** (editable mode — changes to source take effect immediately):
+`pip install -e .` only reads `pyproject.toml` from the folder you are standing in; it
+never downloads the `ui-auditer` project itself. Editable mode means source edits take
+effect immediately.
 
-```bash
-pip install -e ".[dev]"
-playwright install chromium
-```
+### Running without installing the package
 
-**Without installing** (run directly from source):
+The tool also runs straight from the checkout. The runtime dependencies still need to
+exist, but the package does not:
 
 ```bash
 pip install playwright click rich requests python-dotenv
 playwright install chromium
-python -m src https://example.com --persona gen_z
+
+# must be run from the folder that contains the ui_auditer package
+python -m ui_auditer https://example.com --persona gen_z
+python -m ui_auditer https://example.com --persona corporate --json
 ```
+
+`python -m ui_auditer` puts the current directory on `sys.path`, so it works from this
+folder and nowhere else. `pip install -e .` is what makes the `ui-auditer` command
+available from anywhere. The extractor can be exercised on its own as well:
+
+```bash
+python -m ui_auditer.extractor https://example.com
+```
+
+> **If a command fails:** `Chromium is not installed for Playwright` means the browser
+> step was skipped; `Playwright is not installed` means the dependency step was skipped.
+> Both are one-command fixes.
 
 ### Environment Variables
 
@@ -216,30 +235,49 @@ ui-auditer https://example.com --persona corporate --json
 
 > **Note:** When `--json` is used, all Rich terminal output is suppressed — only clean JSON hits stdout, making it safe for piping.
 
-Example output:
+Example output (trimmed — `fixes` is `null` unless `--fix` is passed):
 
 ```json
 {
   "properties": {
     "url": "https://example.com",
+    "title": "Example Domain",
+    "colors": ["rgb(0, 0, 0)", "rgb(0, 0, 238)"],
+    "fonts": ["system-ui"],
+    "font_sizes": ["16px", "14px"],
+    "font_size_weights": {"16px": 166, "14px": 740},
+    "contrast_ratios": [18.1, 8.1],
     "is_dark_mode": false,
-    "fonts": ["Arial", "Helvetica"],
-    "font_sizes": ["14px", "16px"],
-    "contrast_ratios": [21.0, 12.4, 4.8],
-    "text_density": 0.34,
-    "total_elements": 218
+    "has_animations": false,
+    "running_animations": 0,
+    "keyframe_animations": 0,
+    "total_elements": 22,
+    "max_dom_depth": 4,
+    "buttons_count": 0,
+    "links_count": 1,
+    "inputs_count": 0,
+    "text_density": 0.32,
+    "longest_text_block": 206,
+    "scroll_depth_ratio": 1.08,
+    "blocking_overlay": false,
+    "autoplay_media": 0,
+    "hidden_navigation": false
   },
   "score": {
-    "overall_score": 72,
+    "persona_name": "Corporate Power User",
+    "overall_score": 71,
     "grade": "B",
     "breakdown": {
-      "dark_mode": 70,
-      "typography": 88,
-      "visual_density": 65,
+      "dark_mode": 82,
+      "typography": 82,
+      "visual_density": 80,
       "animations": 100,
-      "interactivity": 40
-    }
-  }
+      "interactivity": 10
+    },
+    "recommendations": ["Typography mismatch — 18% of visible text is outside 11–14px. …"],
+    "dealbreakers_triggered": []
+  },
+  "fixes": null
 }
 ```
 
@@ -253,8 +291,8 @@ Example output:
 | 🔤 **Typography** | Equal | Font sizes against persona min/max, weighted by visible character count |
 | 📐 **Visual Density** | Equal | Text-node area / page area vs expected density (very_low → high), capped at 1.0 |
 | 🌀 **Motion** | Equal | Running and keyframe animations vs persona preference; hover transitions are ignored |
-| 🔘 **Interactivity** | Equal | Button + link count vs expected interface complexity for the persona |
-| 🚩 **Dealbreakers** | Penalty | Each triggered dealbreaker docks **5 points** from the final score |
+| 🔘 **Interactivity** | Equal | Button + link + form-control count vs expected interface complexity (`interaction_density`) |
+| 🚩 **Dealbreakers** | Penalty | Each triggered dealbreaker docks **5 points**. Only signals the rendered page can expose are used — see below |
 
 The final score is the **average of the five dimension scores** (20% each, 0–100) mapped to a letter grade:
 
@@ -265,6 +303,30 @@ The final score is the **average of the five dimension scores** (20% each, 0–1
 | **C** | 55–69 |
 | **D** | 40–54 |
 | **F** | 0–39 |
+
+### Dealbreakers
+
+Only red flags the DOM and computed styles can actually measure are declared.
+`persona.json` and `ui_auditer/scorer.py` are kept in sync by a test that fails if a
+persona declares a slug the scorer does not handle.
+
+| Slug | Measured signal | Persona |
+|---|---|---|
+| `low_contrast_text` | WCAG ratio below the persona's `min_contrast_ratio` | Elderly |
+| `large_blocks_of_text` | one text node >= 800 characters | Gen-Z |
+| `excessive_whitespace_padding` | text density < 15% | Corporate |
+| `cluttered_sidebar_layouts` | more than 300 DOM elements | Minimalist |
+| `auto_playing_videos` | `<video autoplay>`, `<audio autoplay>`, or a playing video | Neurodivergent |
+| `flashing_banner_animations` | any element running a keyframe animation | Neurodivergent |
+| `infinite_scrolling_feeds` | page height >= 6x the viewport | Neurodivergent |
+| `pop_up_advertisements` | fixed overlay covering >= 50% of the viewport on load | Minimalist |
+| `unskippable_onboarding_modals` | same overlay signal | Corporate |
+| `hidden_navigation` | `nav` hidden at desktop width (hamburger-only) | Elderly |
+
+Removed because a rendered page cannot observe them: `slow_loading_animations`,
+`accidental_swipe_gestures`, `lack_of_keyboard_shortcuts`, `bright_saturated_accent_colors`.
+`light_mode_only_design` was also removed: the colour-scheme dimension already scores a
+light page at 20/100 for a dark-mode persona, so a dealbreaker charged the same property twice.
 
 ---
 
@@ -282,8 +344,9 @@ Every dimension is computed from the rendered page rather than estimated from th
 
 ### Known limitations
 
-- Large text (≥24px, or ≥18.66px bold) is held to the same ratio as body text; the WCAG 3:1 large-text exception is not applied.
+- Large text (>=24px, or >=18.66px bold) is held to the same ratio as body text; the WCAG 3:1 large-text exception is not applied.
 - Contrast is sampled per text style, not per element, and there is no axe-core cross-check yet.
+- Dealbreaker signals are proxies, not detectors: `large_blocks_of_text` counts the longest single text node (a wall of text split into short paragraphs is missed), `infinite_scrolling_feeds` uses page height >=6x viewport, `pop_up_advertisements` / `unskippable_onboarding_modals` only see fixed overlays covering half the viewport at load, and `hidden_navigation` only sees a hidden `nav` element.
 - Personas are literature-informed, not empirically validated; the dimension weights are hand-set rather than calibrated against human ratings.
 - One page per run — no crawl, screenshots, or cross-persona comparison yet (`--compare` is planned).
 
@@ -309,18 +372,18 @@ python -m pytest tests/ -v --tb=short
 | `test_advisor.py` | 17 | Advisor unit tests |
 | `test_contrast.py` | 15 | Colour parsing, WCAG luminance, alpha compositing, contrast ratios |
 | `test_extractor.py` | 4 | `UIProperties` dataclass defaults, custom values, instance independence |
-| `test_scorer.py` | 57 | Persona loading, slug matching, all five scoring rules, contrast blending, weighted typography, dealbreakers, full pipeline |
+| `test_scorer.py` | 71 | Persona loading, slug matching, all five scoring rules, contrast blending, weighted typography, every declared dealbreaker, dealbreaker/persona parity, full pipeline |
 
 ---
 
 ## 📁 Project Structure
 
 ```
-ui-auditer/
+web_auditer/                # this checkout
 ├── 📄 pyproject.toml         # Package config, dependencies, CLI entry point
-├── 📁 src/
+├── 📁 ui_auditer/
 │   ├── 📦 __init__.py        # Package init (version)
-│   ├── 🚀 __main__.py        # python -m src support
+│   ├── 🚀 __main__.py        # python -m ui_auditer support
 │   ├── ⚙️  cli.py             # Entry point — Click commands, pipeline orchestration
 │   ├── 🌐 extractor.py       # Playwright browser engine — renders pages & extracts computed styles
 │   ├── 🎨 contrast.py        # WCAG 2.1 colour parsing, luminance and contrast ratios
@@ -350,7 +413,7 @@ ui-auditer/
 | `scorer.py` | 5 scoring functions + dealbreaker checker; clean swap‑in point for ML models ✨ |
 | `reporter.py` | Rich‑powered terminal output — responsive to narrow/wide terminals |
 | `advisor.py` | Builds prompt, calls OpenRouter API, parses JSON response, writes CSS fix files |
-| `persona.json` | 5 personas, each with ~8 preference keys + ~3 dealbreakers + research citation |
+| `persona.json` | 5 personas, each with ~9 preference keys + only observable dealbreakers + research citation |
 
 ---
 
@@ -385,7 +448,7 @@ URL  ──▶  🌐 extractor.py
 - [x] `--fix` flag: AI‑generated CSS fix suggestions via OpenRouter / Groq
 - [x] `--output` / `-o` flag: custom CSS fix file path
 - [x] pip‑installable package with `ui-auditer` CLI entry point
-- [x] 93 unit tests
+- [x] 107 unit tests, including a dealbreaker/persona parity guard
 
 ### 🔜 Planned
 - [ ] `--compare` flag — score against all 5 personas in a single run
@@ -440,8 +503,8 @@ Contributions are welcome! Here's how you can help:
 
 ```bash
 # Fork & clone
-git clone https://github.com/yourusername/ui-auditer.git
-cd ui-auditer
+git clone https://github.com/Phyboc/UI-Auditer.git
+cd web_auditer
 
 # Create a branch
 git checkout -b feature/your-idea

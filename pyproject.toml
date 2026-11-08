@@ -47,17 +47,17 @@ Repository = "https://github.com/Phyboc/UI-Auditer"
 Issues = "https://github.com/Phyboc/UI-Auditer/issues"
 
 [project.scripts]
-ui-auditer = "src.cli:main"
+ui-auditer = "ui_auditer.cli:main"
 
 [tool.setuptools.package-dir]
 "" = "."
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src"]
+include = ["ui_auditer"]
 
 [tool.setuptools.package-data]
-"src" = ["persona.json"]
+"ui_auditer" = ["persona.json"]
 
 [tool.ruff]
 target-version = "py311"

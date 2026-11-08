@@ -1,10 +1,10 @@
-"""Tests for src.extractor — UIProperties dataclass and helper logic.
+"""Tests for ui_auditer.extractor — UIProperties dataclass and helper logic.
 
 Note: Full browser extraction tests require Playwright + Chromium installed.
 These tests validate the dataclass and non-browser logic only.
 """
 
-from src.extractor import UIProperties
+from ui_auditer.extractor import UIProperties
 
 
 class TestUIProperties:
@@ -27,6 +27,11 @@ class TestUIProperties:
         assert props.font_size_weights == {}
         assert props.running_animations == 0
         assert props.keyframe_animations == 0
+        assert props.longest_text_block == 0
+        assert props.scroll_depth_ratio == 0.0
+        assert props.blocking_overlay is False
+        assert props.autoplay_media == 0
+        assert props.hidden_navigation is False
 
     def test_custom_values(self):
         props = UIProperties(

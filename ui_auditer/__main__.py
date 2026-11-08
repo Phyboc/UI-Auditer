@@ -1,4 +1,4 @@
-"""Allow running as: python -m src"""
+"""Allow running as: python -m ui_auditer"""
 
 from .cli import main
 

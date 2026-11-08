@@ -1,7 +1,7 @@
 """Shared test fixtures for UI-Auditer tests."""
 
 import pytest
-from src.extractor import UIProperties
+from ui_auditer.extractor import UIProperties
 
 
 @pytest.fixture

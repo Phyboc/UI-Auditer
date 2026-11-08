@@ -1,2 +1,2 @@
 [console_scripts]
-ui-auditer = src.cli:main
+ui-auditer = ui_auditer.cli:main
