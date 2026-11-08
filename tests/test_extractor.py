@@ -24,6 +24,7 @@ class TestUIProperties:
         assert props.inputs_count == 0
         assert props.text_density == 0.0
         assert props.contrast_ratios == []
+        assert props.contrast_samples == []
         assert props.font_size_weights == {}
         assert props.running_animations == 0
         assert props.keyframe_animations == 0

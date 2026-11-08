@@ -119,6 +119,58 @@ def _as_float(value, default: float | None = None) -> float | None:
 
 
 # ---------------------------------------------------------------------------
+# Contrast and the WCAG large-text exception
+# ---------------------------------------------------------------------------
+# Large-scale text is >= 24px, or >= 18.66px when bold, and WCAG allows it a
+# 3:1 ratio where body text needs 4.5:1. Personas carry their own floor, so the
+# same 2/3 factor is applied to that floor instead of a hard-coded 3.0.
+LARGE_TEXT_MIN_PX = 24.0
+LARGE_TEXT_BOLD_MIN_PX = 18.66
+LARGE_TEXT_RELAXATION = 2.0 / 3.0
+
+
+def is_large_text(font_size_px: float | None, bold: bool = False) -> bool:
+    """True when the text qualifies for the WCAG large-text contrast exception."""
+    if not font_size_px:
+        return False
+    return font_size_px >= LARGE_TEXT_MIN_PX or (
+        bold and font_size_px >= LARGE_TEXT_BOLD_MIN_PX
+    )
+
+
+def required_contrast(
+    min_ratio: float,
+    font_size_px: float | None = None,
+    bold: bool = False,
+) -> float:
+    """Minimum ratio a text style must reach against the persona's floor."""
+    if is_large_text(font_size_px, bold):
+        return min_ratio * LARGE_TEXT_RELAXATION
+    return min_ratio
+
+
+def _contrast_samples(props: UIProperties) -> list[dict]:
+    """Per-style contrast samples, falling back to bare ratios from older data."""
+    samples = getattr(props, "contrast_samples", None) or []
+    if samples:
+        return [s for s in samples if isinstance(s, dict) and "ratio" in s]
+    return [
+        {"ratio": r, "font_size_px": None, "bold": False}
+        for r in (getattr(props, "contrast_ratios", None) or [])
+    ]
+
+
+def _contrast_failures(props: UIProperties, min_ratio: float) -> tuple[list[dict], list[dict]]:
+    """Styles below their required ratio, plus every sample considered."""
+    samples = _contrast_samples(props)
+    failing = [
+        s for s in samples
+        if s["ratio"] < required_contrast(min_ratio, s.get("font_size_px"), s.get("bold", False))
+    ]
+    return failing, samples
+
+
+# ---------------------------------------------------------------------------
 # Individual scoring rules
 # ---------------------------------------------------------------------------
 
@@ -126,8 +178,9 @@ def _score_dark_mode(props: UIProperties, prefs: dict) -> tuple[int, int, str | 
     """The colour-scheme dimension.
 
     Combines the dark/light match with measured WCAG contrast when the
-    extractor supplied contrast ratios: 60% scheme match, 40% contrast
-    compliance against the persona's ``min_contrast_ratio``. Properties
+    extractor supplied contrast samples: 60% scheme match, 40% contrast
+    compliance against the persona's ``min_contrast_ratio``. Large-scale text
+    is held to the relaxed WCAG ratio (see ``required_contrast``). Properties
     without contrast data keep the original scheme-only behaviour.
 
     This dimension already penalises a scheme mismatch heavily, so personas
@@ -159,24 +212,35 @@ def _score_dark_mode(props: UIProperties, prefs: dict) -> tuple[int, int, str | 
         # neutral / monochromatic — no strong preference
         scheme_score, rec = 70, None
 
-    ratios = getattr(props, "contrast_ratios", None) or []
+    samples = _contrast_samples(props)
     min_ratio = _as_float(prefs.get("min_contrast_ratio"))
 
-    if not ratios or min_ratio is None:
+    if not samples or min_ratio is None:
         return scheme_score, 100, rec
 
-    failing = [r for r in ratios if r < min_ratio]
-    compliance = 1 - (len(failing) / len(ratios))
+    failing, samples = _contrast_failures(props, min_ratio)
+    compliance = 1 - (len(failing) / len(samples))
     combined = round(0.6 * scheme_score + 0.4 * round(compliance * 100))
 
     notes = [rec] if rec else []
     if failing:
-        pct = round(100 * len(failing) / len(ratios))
+        pct = round(100 * len(failing) / len(samples))
+        worst = min(s["ratio"] for s in failing)
         notes.append(
-            f"{pct}% of sampled text styles ({len(failing)}/{len(ratios)}) fall below "
+            f"{pct}% of sampled text styles ({len(failing)}/{len(samples)}) fall below "
             f"this audience's minimum contrast of {min_ratio:g}:1 "
-            f"(worst {min(failing):g}:1). Increase text/background contrast."
+            f"(worst {worst:g}:1). Increase text/background contrast."
         )
+        relaxed = sum(
+            1 for s in samples
+            if min_ratio > s["ratio"] >= required_contrast(
+                min_ratio, s.get("font_size_px"), s.get("bold", False)
+            )
+        )
+        if relaxed:
+            notes.append(
+                f"{relaxed} large-text style(s) pass under the WCAG 3:1 large-text exception."
+            )
 
     return combined, 100, (" ".join(notes) if notes else None)
 
@@ -336,13 +400,13 @@ def _check_dealbreakers(
     prefs = prefs or {}
 
     if "low_contrast_text" in db_set:
-        ratios = getattr(props, "contrast_ratios", None) or []
         min_ratio = _as_float(prefs.get("min_contrast_ratio"), 4.5)
-        failing = [r for r in ratios if r < min_ratio]
+        failing, samples = _contrast_failures(props, min_ratio)
         if failing:
+            worst = min(s["ratio"] for s in failing)
             triggered.append(
-                f"low_contrast_text — {len(failing)}/{len(ratios)} sampled text styles "
-                f"below {min_ratio:g}:1 (worst {min(failing):g}:1)"
+                f"low_contrast_text — {len(failing)}/{len(samples)} sampled text styles "
+                f"below {min_ratio:g}:1 (worst {worst:g}:1)"
             )
 
     if "large_blocks_of_text" in db_set and props.longest_text_block >= LARGE_TEXT_BLOCK_CHARS:

@@ -246,7 +246,12 @@ Example output (trimmed — `fixes` is `null` unless `--fix` is passed):
     "fonts": ["system-ui"],
     "font_sizes": ["16px", "14px"],
     "font_size_weights": {"16px": 166, "14px": 740},
-    "contrast_ratios": [18.1, 8.1],
+    "contrast_ratios": [18.1, 18.1, 8.1],
+    "contrast_samples": [
+      {"ratio": 18.1, "font_size_px": 16, "bold": false},
+      {"ratio": 18.1, "font_size_px": 14, "bold": false},
+      {"ratio": 8.1, "font_size_px": 16, "bold": false}
+    ],
     "is_dark_mode": false,
     "has_animations": false,
     "running_animations": 0,
@@ -336,7 +341,7 @@ Every dimension is computed from the rendered page rather than estimated from th
 
 | Signal | How it is measured |
 |---|---|
-| **Contrast** | For each visible text style, the text colour is paired with the effective background (walking up through transparent ancestors). WCAG 2.1 relative luminance gives a ratio, checked against the persona's `min_contrast_ratio`. The colour-scheme score is 60% dark/light match and 40% contrast compliance. |
+| **Contrast** | For each visible text style, the text colour is paired with the effective background (walking up through transparent ancestors). WCAG 2.1 relative luminance gives a ratio, checked against the persona's `min_contrast_ratio` — relaxed by the WCAG 2/3 factor to 3:1 for large text (>=24px, or >=18.66px bold). The colour-scheme score is 60% dark/light match and 40% contrast compliance. |
 | **Typography** | Font sizes are weighted by visible character count, so a small footer cannot outweigh body copy. |
 | **Density** | Sum of text-node line boxes divided by page area, clipped to the viewport and capped at 1.0, so nested elements are not counted twice. |
 | **Motion** | `document.getAnimations()` plus declared keyframe animations. CSS transitions (hover/focus styling) are ignored. |
@@ -344,8 +349,8 @@ Every dimension is computed from the rendered page rather than estimated from th
 
 ### Known limitations
 
-- Large text (>=24px, or >=18.66px bold) is held to the same ratio as body text; the WCAG 3:1 large-text exception is not applied.
-- Contrast is sampled per text style, not per element, and there is no axe-core cross-check yet.
+- Contrast is sampled per text style, not per element, so one flagged style can stand for many elements. `scripts/axe_crosscheck.py` verifies the maths against axe-core, but the two deliberately report at different granularity.
+- The large-text exception scales the persona floor by 2/3 rather than using WCAG's absolute 3:1, so a strict floor relaxes more in absolute terms (elderly 7.0:1 → 4.67:1, slightly stricter than WCAG AAA's 4.5:1).
 - Dealbreaker signals are proxies, not detectors: `large_blocks_of_text` counts the longest single text node (a wall of text split into short paragraphs is missed), `infinite_scrolling_feeds` uses page height >=6x viewport, `pop_up_advertisements` / `unskippable_onboarding_modals` only see fixed overlays covering half the viewport at load, and `hidden_navigation` only sees a hidden `nav` element.
 - Personas are literature-informed, not empirically validated; the dimension weights are hand-set rather than calibrated against human ratings.
 - One page per run — no crawl, screenshots, or cross-persona comparison yet (`--compare` is planned).
@@ -363,6 +368,15 @@ python -m pytest tests/ -v
 
 # Run with coverage
 python -m pytest tests/ -v --tb=short
+
+# End-to-end extraction against a local fixture (needs Chromium; skips without it)
+python -m pytest tests/test_integration.py -v
+
+# Cross-check the contrast maths against axe-core (CDN, or pass --axe path/to/axe.min.js)
+python scripts/axe_crosscheck.py tests/fixtures/contrast_page.html
+
+# Before/after score distribution over a sample of live pages
+python scripts/distribution.py --limit 24
 ```
 
 **Test coverage:**
@@ -372,7 +386,8 @@ python -m pytest tests/ -v --tb=short
 | `test_advisor.py` | 17 | Advisor unit tests |
 | `test_contrast.py` | 15 | Colour parsing, WCAG luminance, alpha compositing, contrast ratios |
 | `test_extractor.py` | 4 | `UIProperties` dataclass defaults, custom values, instance independence |
-| `test_scorer.py` | 71 | Persona loading, slug matching, all five scoring rules, contrast blending, weighted typography, every declared dealbreaker, dealbreaker/persona parity, full pipeline |
+| `test_integration.py` | 9 | Real browser on a local fixture: interactive counts, motion, dealbreaker signals, contrast samples with typography, large-text exception, full pipeline |
+| `test_scorer.py` | 83 | Persona loading, slug matching, all five scoring rules, contrast blending, the WCAG large-text exception, weighted typography, every declared dealbreaker, dealbreaker/persona parity, full pipeline |
 
 ---
 
@@ -448,11 +463,13 @@ URL  ──▶  🌐 extractor.py
 - [x] `--fix` flag: AI‑generated CSS fix suggestions via OpenRouter / Groq
 - [x] `--output` / `-o` flag: custom CSS fix file path
 - [x] pip‑installable package with `ui-auditer` CLI entry point
-- [x] 107 unit tests, including a dealbreaker/persona parity guard
+- [x] WCAG large-text contrast exception (3:1 for >=24px or >=18.66px bold)
+- [x] axe-core contrast cross-check and a before/after distribution over 24 live pages
+- [x] 128 tests, including a dealbreaker/persona parity guard and an end-to-end browser test
 
 ### 🔜 Planned
 - [ ] `--compare` flag — score against all 5 personas in a single run
-- [ ] 🔍 axe-core cross-check for contrast and tap targets
+- [ ] 🔍 axe-core cross-check for tap targets and landmark structure
 - [ ] 📊 Calibrate heuristic weights against human ratings (pairwise study)
 - [ ] 📸 Screenshot capture for visual documentation in reports
 - [ ] 🖥️ Interactive mode — real‑time persona switching

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Contrast Fixture</title>
+<style>
+  body { margin: 0; padding: 24px; background: #ffffff; color: #000000;
+         font-family: Arial, sans-serif; }
+  p { font-size: 16px; margin: 0 0 16px; }
+  h2 { font-size: 32px; color: #949494; margin: 0 0 16px; }  /* 3.03:1 large text */
+  .a { color: #767676; }                                     /* 4.54:1 passes AA */
+  .b { color: #999999; }                                     /* 2.85:1 fails AA */
+</style>
+</head>
+<body>
+  <h2>Heading at 32px in grey</h2>
+  <p class="a">Meets AA at 4.54 to 1</p>
+  <p class="b">Fails AA at 2.85 to 1</p>
+</body>
+</html>

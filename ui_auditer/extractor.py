@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .contrast import ratios_from_pairs
+from .contrast import contrast_samples_from_pairs
 
 
 @dataclass
@@ -27,6 +27,9 @@ class UIProperties:
     font_sizes: list[str] = field(default_factory=list)
     font_size_weights: dict[str, int] = field(default_factory=dict)
     contrast_ratios: list[float] = field(default_factory=list)
+    # Per-style samples: {"ratio", "font_size_px", "bold"}. The typography is
+    # needed so the WCAG large-text exception can be applied per style.
+    contrast_samples: list[dict] = field(default_factory=list)
     is_dark_mode: bool = False
     has_animations: bool = False
     running_animations: int = 0
@@ -62,7 +65,7 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
         RuntimeError: for the two common setup failures (Playwright missing,
             Chromium not downloaded) with the command that fixes them.
     """
-    if not url.startswith(("http://", "https://")):
+    if not url.startswith(("http://", "https://", "file://")):
         url = "https://" + url
 
     # Imported here so the CLI, scorer and reporter can be imported (and
@@ -159,10 +162,12 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
                     || parseFloat(style.opacity) === 0) continue;
                 const fg = style.color;
                 const bg = effectiveBg(el);
-                const key = fg + '|' + bg;
+                const sizePx = parseFloat(style.fontSize) || 16;
+                const bold = (parseInt(style.fontWeight, 10) || 400) >= 700;
+                const key = fg + '|' + bg + '|' + sizePx + '|' + bold;
                 if (seenContrast.has(key)) continue;
                 seenContrast.add(key);
-                contrastPairs.push([fg, bg]);
+                contrastPairs.push([fg, bg, sizePx, bold]);
             }
 
             // 2. FONTS
@@ -361,7 +366,9 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
         }""")
 
             pairs = features.pop("contrast_pairs", [])
-            features["contrast_ratios"] = ratios_from_pairs(pairs)
+            samples = contrast_samples_from_pairs(pairs)
+            features["contrast_samples"] = samples
+            features["contrast_ratios"] = [s["ratio"] for s in samples]
 
         finally:
             browser.close()
@@ -385,6 +392,7 @@ if __name__ == "__main__":
     print(f"Elements:     {props.total_elements}, depth {props.max_dom_depth}")
     print(f"Interactive:  {props.buttons_count} buttons, {props.links_count} links, {props.inputs_count} inputs")
     print(f"Text density: {props.text_density:.1%}")
+    print(f"Contrast:     {len(props.contrast_samples)} text styles sampled")
     print(f"Longest text block: {props.longest_text_block} chars")
     print(f"Scroll depth:       {props.scroll_depth_ratio:.1f}x viewport")
     print(f"Blocking overlay:   {props.blocking_overlay}")

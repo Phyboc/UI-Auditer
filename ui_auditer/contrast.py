@@ -102,6 +102,38 @@ def contrast_ratio(fg: tuple[float, float, float, float],
     return (lighter + 0.05) / (darker + 0.05)
 
 
+def contrast_samples_from_pairs(
+    pairs: list[list],
+) -> list[dict]:
+    """Turn ``(fg, bg, font_size_px, bold)`` rows into contrast samples.
+
+    The typography travels with the ratio because WCAG allows large-scale text a
+    lower minimum (3:1 instead of 4.5:1), and that exception is per text style.
+    Rows without typography keep ``font_size_px`` as ``None``, which the scorer
+    treats as body text.
+    """
+    samples: list[dict] = []
+    for pair in pairs or []:
+        if not pair or len(pair) < 2:
+            continue
+        fg = parse_css_color(pair[0])
+        bg = parse_css_color(pair[1])
+        if fg is None or bg is None or bg[3] <= 0:
+            continue
+        size: float | None = None
+        if len(pair) >= 3:
+            try:
+                size = float(pair[2])
+            except (TypeError, ValueError):
+                size = None
+        samples.append({
+            "ratio": round(contrast_ratio(fg, bg), 2),
+            "font_size_px": size,
+            "bold": bool(pair[3]) if len(pair) >= 4 else False,
+        })
+    return samples
+
+
 def ratios_from_pairs(pairs: list[tuple[str, str]] | list[list[str]]) -> list[float]:
     """Convert ``(foreground, background)`` CSS strings into ratios.
 

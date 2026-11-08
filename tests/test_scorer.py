@@ -1,6 +1,9 @@
 """Tests for ui_auditer.scorer — persona loading, slug matching, and scoring functions."""
 
 from pathlib import Path
+
+from pytest import approx
+
 from ui_auditer.extractor import UIProperties
 from ui_auditer.scorer import (
     HANDLED_DEALBREAKERS,
@@ -15,8 +18,93 @@ from ui_auditer.scorer import (
     _score_animations,
     _score_interactivity,
     _check_dealbreakers,
+    is_large_text,
+    required_contrast,
     score,
 )
+
+
+# ---------------------------------------------------------------------------
+# WCAG large-text exception
+# ---------------------------------------------------------------------------
+
+class TestLargeTextException:
+    def test_24px_is_large(self):
+        assert is_large_text(24.0) is True
+
+    def test_body_text_is_not_large(self):
+        assert is_large_text(16.0) is False
+
+    def test_bold_19px_is_large(self):
+        assert is_large_text(19.0, bold=True) is True
+
+    def test_bold_16px_is_not_large(self):
+        assert is_large_text(16.0, bold=True) is False
+
+    def test_unknown_size_is_treated_as_body_text(self):
+        assert is_large_text(None) is False
+
+    def test_required_ratio_relaxes_by_two_thirds(self):
+        assert required_contrast(4.5, 32.0) == approx(3.0, abs=1e-6)
+        assert required_contrast(4.5, 16.0) == 4.5
+
+    def test_elderly_floor_scales_too(self):
+        assert required_contrast(7.0, 30.0) == approx(4.667, abs=0.01)
+
+    def test_large_heading_at_three_to_one_passes(self):
+        props = UIProperties(url="https://example.com", contrast_samples=[
+            {"ratio": 3.03, "font_size_px": 32.0, "bold": False},
+            {"ratio": 12.0, "font_size_px": 16.0, "bold": False},
+        ])
+        triggered = _check_dealbreakers(
+            props, ["low_contrast_text"], {"min_contrast_ratio": 4.5}
+        )
+        assert triggered == []
+
+    def test_same_ratio_at_body_size_fails(self):
+        props = UIProperties(url="https://example.com", contrast_samples=[
+            {"ratio": 3.03, "font_size_px": 16.0, "bold": False},
+        ])
+        triggered = _check_dealbreakers(
+            props, ["low_contrast_text"], {"min_contrast_ratio": 4.5}
+        )
+        assert len(triggered) == 1
+
+    def test_dimension_scores_the_relaxed_style_as_passing(self):
+        props = UIProperties(
+            url="https://example.com",
+            is_dark_mode=False,
+            contrast_samples=[
+                {"ratio": 3.03, "font_size_px": 32.0, "bold": False},
+                {"ratio": 12.0, "font_size_px": 16.0, "bold": False},
+            ],
+        )
+        value, _, rec = _score_dark_mode(
+            props, {"color_scheme": "light_mode_preferred", "min_contrast_ratio": 4.5}
+        )
+        assert value == 100
+        assert rec is None
+
+    def test_dimension_still_docks_a_body_text_failure(self):
+        props = UIProperties(
+            url="https://example.com",
+            is_dark_mode=False,
+            contrast_samples=[
+                {"ratio": 3.03, "font_size_px": 32.0, "bold": False},
+                {"ratio": 2.5, "font_size_px": 16.0, "bold": False},
+            ],
+        )
+        value, _, rec = _score_dark_mode(
+            props, {"color_scheme": "light_mode_preferred", "min_contrast_ratio": 4.5}
+        )
+        assert value == 80
+        assert rec is not None and "large-text exception" in rec
+
+    def test_contrast_samples_keep_typography(self):
+        from ui_auditer.contrast import contrast_samples_from_pairs
+
+        samples = contrast_samples_from_pairs([["#000000", "#ffffff", 32, False]])
+        assert samples == [{"ratio": 21.0, "font_size_px": 32.0, "bold": False}]
 
 
 # ---------------------------------------------------------------------------

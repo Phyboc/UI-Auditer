@@ -31,7 +31,7 @@ console = Console()
 def main(url, persona, timeout, output_json, suggest_fix, output_path):
     """Evaluate a webpage's UI against a target audience persona."""
 
-    if not url.startswith(("http://", "https://")):
+    if not url.startswith(("http://", "https://", "file://")):
         url = "https://" + url
 
     # Load all personas and find the one requested

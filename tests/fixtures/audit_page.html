@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Audit Fixture</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #ffffff; }
+  body { font-family: Arial, sans-serif; font-size: 16px; color: #000000; padding: 24px; }
+  h1 { font-size: 32px; color: #949494; margin: 0 0 16px; }      /* 3.03:1, legal as large text */
+  p { margin: 0 0 16px; }
+  .low { color: #999999; font-size: 16px; }                      /* 2.85:1, fails AA */
+  .ok  { color: #767676; font-size: 16px; }                      /* 4.54:1, passes AA */
+  nav { display: none; }                                          /* hidden navigation */
+  #overlay { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, 0.35); }
+  .spinner { animation: spin 2s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <nav><span>Menu</span></nav>
+
+  <h1>Large heading in low-contrast grey</h1>
+
+  <p class="low">This paragraph is deliberately below the contrast floor.</p>
+  <p class="ok">This paragraph sits just above the AA contrast floor.</p>
+
+  <p>The quick brown fox jumps over the lazy dog while the calm audience watches quietly. The quick brown fox jumps over the lazy dog while the calm audience watches quietly. The quick brown fox jumps over the lazy dog while the calm audience watches quietly. The quick brown fox jumps over the lazy dog while the calm audience watches quietly. The quick brown fox jumps over the lazy dog while the calm audience watches quietly. The quick brown fox jumps over the lazy dog while the calm audience watches quietly. The quick brown fox jumps over the lazy dog while the calm audience watches quietly. The quick brown fox jumps over the lazy dog while the calm audience watches quietly. The quick brown fox jumps over the lazy dog while the calm audience watches quietly. The quick brown fox jumps over the lazy dog while the calm audience watches quietly. The quick brown fox jumps over the lazy dog.</p>
+
+  <button type="button">Save</button>
+  <button type="button">Cancel</button>
+  <a href="#one">One</a> <a href="#two">Two</a> <a href="#three">Three</a>
+
+  <p><input type="text" placeholder="Search"></p>
+
+  <video autoplay muted loop playsinline></video>
+  <div class="spinner">Loading</div>
+
+  <div id="overlay"></div>
+</body>
+</html>
