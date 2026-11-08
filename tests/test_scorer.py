@@ -70,6 +70,15 @@ class TestLargeTextException:
         )
         assert len(triggered) == 1
 
+    def test_dealbreaker_names_the_failing_element(self):
+        props = UIProperties(url="https://example.com", contrast_samples=[
+            {"ratio": 2.5, "font_size_px": 16.0, "bold": False, "targets": ["p.low"]},
+        ])
+        triggered = _check_dealbreakers(
+            props, ["low_contrast_text"], {"min_contrast_ratio": 4.5}
+        )
+        assert "at p.low" in triggered[0]
+
     def test_dimension_scores_the_relaxed_style_as_passing(self):
         props = UIProperties(
             url="https://example.com",

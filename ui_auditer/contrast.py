@@ -105,12 +105,13 @@ def contrast_ratio(fg: tuple[float, float, float, float],
 def contrast_samples_from_pairs(
     pairs: list[list],
 ) -> list[dict]:
-    """Turn ``(fg, bg, font_size_px, bold)`` rows into contrast samples.
+    """Turn ``(fg, bg, font_size_px, bold[, targets])`` rows into samples.
 
     The typography travels with the ratio because WCAG allows large-scale text a
     lower minimum (3:1 instead of 4.5:1), and that exception is per text style.
     Rows without typography keep ``font_size_px`` as ``None``, which the scorer
-    treats as body text.
+    treats as body text. An optional fifth element adds element annotations
+    (up to three readable selectors) so a finding can point at the markup.
     """
     samples: list[dict] = []
     for pair in pairs or []:
@@ -126,11 +127,17 @@ def contrast_samples_from_pairs(
                 size = float(pair[2])
             except (TypeError, ValueError):
                 size = None
-        samples.append({
+        sample: dict = {
             "ratio": round(contrast_ratio(fg, bg), 2),
             "font_size_px": size,
             "bold": bool(pair[3]) if len(pair) >= 4 else False,
-        })
+        }
+        targets = pair[4] if len(pair) >= 5 else None
+        if targets:
+            if isinstance(targets, str):
+                targets = [targets]
+            sample["targets"] = [str(t) for t in targets[:3]]
+        samples.append(sample)
     return samples
 
 

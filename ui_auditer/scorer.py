@@ -160,6 +160,14 @@ def _contrast_samples(props: UIProperties) -> list[dict]:
     ]
 
 
+def contrast_target(sample: dict) -> str | None:
+    """First element annotation recorded for a text style, if any."""
+    targets = sample.get("targets") or []
+    if isinstance(targets, str):
+        return targets or None
+    return str(targets[0]) if targets else None
+
+
 def _contrast_failures(props: UIProperties, min_ratio: float) -> tuple[list[dict], list[dict]]:
     """Styles below their required ratio, plus every sample considered."""
     samples = _contrast_samples(props)
@@ -225,11 +233,14 @@ def _score_dark_mode(props: UIProperties, prefs: dict) -> tuple[int, int, str | 
     notes = [rec] if rec else []
     if failing:
         pct = round(100 * len(failing) / len(samples))
-        worst = min(s["ratio"] for s in failing)
+        worst_sample = min(failing, key=lambda s: s["ratio"])
+        worst = worst_sample["ratio"]
+        location = contrast_target(worst_sample)
+        here = f" at {location}" if location else ""
         notes.append(
             f"{pct}% of sampled text styles ({len(failing)}/{len(samples)}) fall below "
             f"this audience's minimum contrast of {min_ratio:g}:1 "
-            f"(worst {worst:g}:1). Increase text/background contrast."
+            f"(worst {worst:g}:1{here}). Increase text/background contrast."
         )
         relaxed = sum(
             1 for s in samples
@@ -403,10 +414,12 @@ def _check_dealbreakers(
         min_ratio = _as_float(prefs.get("min_contrast_ratio"), 4.5)
         failing, samples = _contrast_failures(props, min_ratio)
         if failing:
-            worst = min(s["ratio"] for s in failing)
+            worst_sample = min(failing, key=lambda s: s["ratio"])
+            location = contrast_target(worst_sample)
+            here = f" at {location}" if location else ""
             triggered.append(
                 f"low_contrast_text — {len(failing)}/{len(samples)} sampled text styles "
-                f"below {min_ratio:g}:1 (worst {worst:g}:1)"
+                f"below {min_ratio:g}:1 (worst {worst_sample['ratio']:g}:1{here})"
             )
 
     if "large_blocks_of_text" in db_set and props.longest_text_block >= LARGE_TEXT_BLOCK_CHARS:
@@ -465,6 +478,19 @@ def _check_dealbreakers(
 # ---------------------------------------------------------------------------
 # Main scoring function
 # ---------------------------------------------------------------------------
+
+def grade_for(overall: int) -> str:
+    """Letter grade for an overall score."""
+    if overall >= 85:
+        return "A"
+    if overall >= 70:
+        return "B"
+    if overall >= 55:
+        return "C"
+    if overall >= 40:
+        return "D"
+    return "F"
+
 
 def score(props: UIProperties, persona: dict) -> dict:
     """
@@ -535,13 +561,7 @@ def score(props: UIProperties, persona: dict) -> dict:
     penalty = len(db_triggered) * 5
     overall = max(0, overall - penalty)
 
-    grade = (
-        "A" if overall >= 85 else
-        "B" if overall >= 70 else
-        "C" if overall >= 55 else
-        "D" if overall >= 40 else
-        "F"
-    )
+    grade = grade_for(overall)
 
     return {
         "persona_name":          persona["name"],

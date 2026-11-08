@@ -33,6 +33,7 @@ class TestUIProperties:
         assert props.blocking_overlay is False
         assert props.autoplay_media == 0
         assert props.hidden_navigation is False
+        assert props.same_origin_links == []
 
     def test_custom_values(self):
         props = UIProperties(

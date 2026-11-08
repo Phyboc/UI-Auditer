@@ -47,9 +47,16 @@ class UIProperties:
     blocking_overlay: bool = False
     autoplay_media: int = 0
     hidden_navigation: bool = False
+    # Same-origin links found on the page, used by ``--crawl``. Collected here
+    # so crawling reuses the render the audit already paid for.
+    same_origin_links: list[str] = field(default_factory=list)
 
 
-def extract(url: str, timeout: int = 15000) -> UIProperties:
+def extract(
+    url: str,
+    timeout: int = 15000,
+    inject_css: str | None = None,
+) -> UIProperties:
     """
     Launch a headless browser, render the URL, and extract all UI properties
     using the browser's own computed style engine.
@@ -57,6 +64,8 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
     Args:
         url: Full URL including https://
         timeout: Page load timeout in milliseconds (default 15s)
+        inject_css: Stylesheet injected after load and before measurement. Used
+            by ``--apply`` to render a candidate fix and re-measure the page.
 
     Returns:
         UIProperties dataclass with all extracted values
@@ -93,6 +102,10 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
 
             # Wait until network is idle so JS frameworks finish rendering
             page.goto(url, wait_until="networkidle", timeout=timeout)
+
+            if inject_css:
+                page.add_style_tag(content=inject_css)
+                page.wait_for_timeout(150)  # let the new styles apply
 
             title = page.title()
 
@@ -146,10 +159,35 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
                 return acc ? toCss(over(acc, [255, 255, 255, 1])) : 'rgba(255, 255, 255, 1)';
             };
             const contrastPairs = [];
-            const seenContrast = new Set();
+            const contrastByKey = new Map();
+            // Short, readable path to the element, so a finding can name it.
+            const cssPath = (el) => {
+                const parts = [];
+                let cur = el;
+                let depth = 0;
+                while (cur && cur.nodeType === 1 && depth < 3) {
+                    let part = cur.tagName.toLowerCase();
+                    if (cur.id) { parts.unshift(part + '#' + cur.id); break; }
+                    const raw = typeof cur.className === 'string' ? cur.className.trim() : '';
+                    const cls = raw ? raw.split(/\s+/).filter(Boolean).slice(0, 2) : [];
+                    if (cls.length) part += '.' + cls.join('.');
+                    const parent = cur.parentElement;
+                    if (parent) {
+                        const same = Array.from(parent.children)
+                            .filter(c => c.tagName === cur.tagName);
+                        if (same.length > 1) {
+                            part += ':nth-of-type(' + (same.indexOf(cur) + 1) + ')';
+                        }
+                    }
+                    parts.unshift(part);
+                    cur = parent;
+                    depth++;
+                }
+                return parts.join(' > ') || el.tagName.toLowerCase();
+            };
             const textWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
             let textNode;
-            while ((textNode = textWalker.nextNode()) && contrastPairs.length < 500) {
+            while ((textNode = textWalker.nextNode()) && contrastByKey.size < 500) {
                 const value = (textNode.nodeValue || '').trim();
                 if (value.length < 3) continue;
                 const el = textNode.parentElement;
@@ -165,9 +203,14 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
                 const sizePx = parseFloat(style.fontSize) || 16;
                 const bold = (parseInt(style.fontWeight, 10) || 400) >= 700;
                 const key = fg + '|' + bg + '|' + sizePx + '|' + bold;
-                if (seenContrast.has(key)) continue;
-                seenContrast.add(key);
-                contrastPairs.push([fg, bg, sizePx, bold]);
+                const existing = contrastByKey.get(key);
+                if (existing) {
+                    if (existing[4].length < 3) existing[4].push(cssPath(el));
+                    continue;
+                }
+                const sample = [fg, bg, sizePx, bold, [cssPath(el)]];
+                contrastByKey.set(key, sample);
+                contrastPairs.push(sample);
             }
 
             // 2. FONTS
@@ -341,6 +384,18 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
                     || el.getBoundingClientRect().width === 0) hiddenNavigation = true;
             });
 
+            // 14. SAME-ORIGIN LINKS — the crawl seed list
+            const seenLinks = new Set();
+            document.querySelectorAll('a[href]').forEach(a => {
+                try {
+                    const u = new URL(a.getAttribute('href'), location.href);
+                    if (u.origin !== location.origin) return;
+                    u.hash = '';
+                    if (u.href === location.href) return;
+                    seenLinks.add(u.href);
+                } catch (e) { /* relative or malformed href */ }
+            });
+
             return {
                 colors:         [...colors],
                 contrast_pairs: contrastPairs,
@@ -362,6 +417,7 @@ def extract(url: str, timeout: int = 15000) -> UIProperties:
                 blocking_overlay: blockingOverlay,
                 autoplay_media: autoplay.size,
                 hidden_navigation: hiddenNavigation,
+                same_origin_links: [...seenLinks].slice(0, 100),
             };
         }""")
 
@@ -398,3 +454,4 @@ if __name__ == "__main__":
     print(f"Blocking overlay:   {props.blocking_overlay}")
     print(f"Autoplay media:     {props.autoplay_media}")
     print(f"Hidden navigation:  {props.hidden_navigation}")
+    print(f"Same-origin links:  {len(props.same_origin_links)}")

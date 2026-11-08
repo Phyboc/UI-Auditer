@@ -187,7 +187,47 @@ ui-auditer http://localhost:3000 --persona elderly --timeout 30000
 
 # Evaluate against the corporate persona
 ui-auditer https://www.example.com --persona corporate
+
+# Score all five personas from a single render
+ui-auditer https://example.com --compare
+
+# Audit the page plus two same-origin links it points at
+ui-auditer https://www.python.org --crawl 2 --persona elderly
 ```
+
+### Closed-loop fix verification
+
+`--fix` proposes rules; `--apply` proves them:
+
+```bash
+ui-auditer https://example.com --fix --apply -o verified_fixes.css
+```
+
+Each suggested rule is injected into a fresh render of the page, which is then
+re-measured and re-scored. A rule is kept only when it does not lower the score,
+and the CSS file contains just the survivors:
+
+```
+Closed-loop verification
+body { background-color }              56 → 48   dropped
+body { color }                         56 → 51   dropped
+*, *::before, *::after { animation }   56 → 56   kept
+```
+
+That is the difference between "an LLM thinks this helps" and "this page got
+worse, so the rule is discarded". Findings are annotated with the element they
+came from, so a contrast problem reads `worst 2.85:1 at p.intro`.
+
+### CI usage
+
+```bash
+# Non-zero exit code when any audited page scores below 55
+ui-auditer https://example.com --fail-under 55
+```
+
+`.github/workflows/ui-audit.yml` runs the audit on a schedule and on demand,
+with `url`, `persona` and `min_score` inputs. `--crawl` counts every audited page
+when `--fail-under` is set, so one bad page in a crawl fails the job.
 
 ### Personas
 
@@ -213,6 +253,7 @@ When `--fix` is passed:
 2. The LLM returns structured JSON with CSS selectors/properties/values and non‑CSS suggestions.
 3. CSS fixes are written to **`suggested_fixes.css`** — ready to drop into your project.
 4. The terminal report includes a dedicated AI Suggestions panel.
+5. With `--apply`, every rule is rendered and re-scored before it is written (see above).
 
 ### Custom Output Path
 
@@ -353,7 +394,8 @@ Every dimension is computed from the rendered page rather than estimated from th
 - The large-text exception scales the persona floor by 2/3 rather than using WCAG's absolute 3:1, so a strict floor relaxes more in absolute terms (elderly 7.0:1 → 4.67:1, slightly stricter than WCAG AAA's 4.5:1).
 - Dealbreaker signals are proxies, not detectors: `large_blocks_of_text` counts the longest single text node (a wall of text split into short paragraphs is missed), `infinite_scrolling_feeds` uses page height >=6x viewport, `pop_up_advertisements` / `unskippable_onboarding_modals` only see fixed overlays covering half the viewport at load, and `hidden_navigation` only sees a hidden `nav` element.
 - Personas are literature-informed, not empirically validated; the dimension weights are hand-set rather than calibrated against human ratings.
-- One page per run — no crawl, screenshots, or cross-persona comparison yet (`--compare` is planned).
+- `--crawl` follows same-origin links found on the start page only — one level deep, no sitemap, and no JavaScript-discovered routes. Screenshots are not captured yet.
+- `--apply` verifies rules one at a time in the submitted order, so a rule that only helps after another rule is applied first can be dropped for lack of a gain on its own.
 
 ---
 
@@ -386,8 +428,10 @@ python scripts/distribution.py --limit 24
 | `test_advisor.py` | 17 | Advisor unit tests |
 | `test_contrast.py` | 15 | Colour parsing, WCAG luminance, alpha compositing, contrast ratios |
 | `test_extractor.py` | 4 | `UIProperties` dataclass defaults, custom values, instance independence |
-| `test_integration.py` | 9 | Real browser on a local fixture: interactive counts, motion, dealbreaker signals, contrast samples with typography, large-text exception, full pipeline |
-| `test_scorer.py` | 83 | Persona loading, slug matching, all five scoring rules, contrast blending, the WCAG large-text exception, weighted typography, every declared dealbreaker, dealbreaker/persona parity, full pipeline |
+| `test_integration.py` | 11 | Real browser on a local fixture: interactive counts, motion, dealbreaker signals, contrast samples with typography and element annotations, large-text exception, injected-CSS re-measurement, full pipeline |
+| `test_cli.py` | 13 | Flag wiring with a stubbed extractor: `--compare`, `--apply`, `--crawl`, `--fail-under`, JSON payload shape, exit codes |
+| `test_fixer.py` | 14 | CSS rendering, duplicate collapsing, keep/drop rules, cumulative verification, failure handling |
+| `test_scorer.py` | 84 | Persona loading, slug matching, all five scoring rules, contrast blending, the WCAG large-text exception, annotated findings, weighted typography, every declared dealbreaker, dealbreaker/persona parity, full pipeline |
 
 ---
 
@@ -405,6 +449,7 @@ web_auditer/                # this checkout
 │   ├── 📊 scorer.py          # Heuristic engine — scores properties against persona rules
 │   ├── 📄 reporter.py        # Rich terminal renderer — tables, panels, colour bars
 │   ├── 🤖 advisor.py         # LLM advisor — generates CSS fix suggestions & writes to file
+│   ├── ✅ fixer.py           # Closed-loop verification — re-renders each rule, keeps what helps
 │   └── 👤 persona.json       # 5 audience personas with preferences & dealbreakers
 ├── 📁 tests/
 │   ├── 📦 __init__.py
@@ -413,6 +458,14 @@ web_auditer/                # this checkout
 │   ├── 🧪 test_contrast.py   # WCAG luminance and ratio maths
 │   ├── 🧪 test_extractor.py  # UIProperties dataclass
 │   ├── 🧪 test_advisor.py    # LLM advisor parsing and CSS output
+│   ├── 🧪 test_fixer.py      # Closed-loop keep/drop logic
+│   ├── 🧪 test_cli.py        # CLI flags with a stubbed extractor
+│   ├── 🧪 test_integration.py # Real Chromium against fixtures/
+│   └── 📁 fixtures/          # Audit and contrast fixture pages
+├── 📁 scripts/
+│   ├── 🔍 axe_crosscheck.py  # Contrast maths vs axe-core
+│   └── 📊 distribution.py    # Before/after scores over live pages
+├── 📁 .github/workflows/     # ui-audit.yml — scheduled + on-demand audit
 ├── 🔒 .env                   # API keys (gitignored)
 ├── 🔒 .gitignore
 └── 📖 README.md              # You are here ✨
@@ -428,6 +481,7 @@ web_auditer/                # this checkout
 | `scorer.py` | 5 scoring functions + dealbreaker checker; clean swap‑in point for ML models ✨ |
 | `reporter.py` | Rich‑powered terminal output — responsive to narrow/wide terminals |
 | `advisor.py` | Builds prompt, calls OpenRouter API, parses JSON response, writes CSS fix files |
+| `fixer.py` | Renders each suggested rule, re-scores, and keeps only the rules that do not lower the score |
 | `persona.json` | 5 personas, each with ~9 preference keys + only observable dealbreakers + research citation |
 
 ---
@@ -465,10 +519,13 @@ URL  ──▶  🌐 extractor.py
 - [x] pip‑installable package with `ui-auditer` CLI entry point
 - [x] WCAG large-text contrast exception (3:1 for >=24px or >=18.66px bold)
 - [x] axe-core contrast cross-check and a before/after distribution over 24 live pages
-- [x] 128 tests, including a dealbreaker/persona parity guard and an end-to-end browser test
+- [x] `--compare` — all five personas from a single render
+- [x] `--apply` — closed-loop verification: render each suggested rule, keep only the ones that hold the score
+- [x] `--crawl N` + `--fail-under N`, with a GitHub Actions workflow
+- [x] Element annotations on low-contrast findings (`worst 2.85:1 at p.intro`)
+- [x] 158 tests, including a dealbreaker/persona parity guard and an end-to-end browser test
 
 ### 🔜 Planned
-- [ ] `--compare` flag — score against all 5 personas in a single run
 - [ ] 🔍 axe-core cross-check for tap targets and landmark structure
 - [ ] 📊 Calibrate heuristic weights against human ratings (pairwise study)
 - [ ] 📸 Screenshot capture for visual documentation in reports

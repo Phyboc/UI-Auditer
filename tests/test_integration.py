@@ -71,6 +71,32 @@ class TestFixtureExtraction:
         assert large, "the 32px heading should have been sampled"
         assert min(s["ratio"] for s in large) == pytest.approx(3.03, abs=0.1)
 
+    def test_contrast_samples_are_annotated_with_elements(self, props):
+        assert all(s.get("targets") for s in props.contrast_samples)
+        joined = " ".join(t for s in props.contrast_samples for t in s["targets"])
+        assert "p.low" in joined, joined
+
+    def test_injected_css_changes_the_measurement(self):
+        """The mechanism --apply relies on: render again with a stylesheet."""
+        try:
+            fixed = extract(
+                FIXTURE.as_uri(),
+                timeout=20000,
+                inject_css=".low { color: #000000 !important; }",
+            )
+        except RuntimeError as exc:
+            if "Chromium is not installed" in str(exc):
+                pytest.skip("Chromium is not installed")
+            raise
+        triggered = _check_dealbreakers(
+            fixed, ["low_contrast_text"], {"min_contrast_ratio": 4.5}
+        )
+        assert triggered == []
+        # The 32px heading stays at ~3.03:1 (legal large text); the failing
+        # 16px paragraph must be gone.
+        assert min(s["ratio"] for s in fixed.contrast_samples) >= 3.0
+        assert not [s for s in fixed.contrast_samples if s["ratio"] < 3.0]
+
 
 class TestFixtureScoring:
     def test_large_text_exception_avoids_false_positive(self, props):

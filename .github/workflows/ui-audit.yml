@@ -1,0 +1,42 @@
+name: UI audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Page to audit
+        required: true
+        default: https://example.com
+      persona:
+        description: Persona slug (gen_z | elderly | corporate | minimalist | neurodivergent)
+        default: gen_z
+      min_score:
+        description: Fail the job below this overall score
+        default: "50"
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          pip install -e ".[dev]"
+          playwright install --with-deps chromium
+
+      - name: Audit
+        env:
+          URL: ${{ inputs.url || 'https://example.com' }}
+          PERSONA: ${{ inputs.persona || 'gen_z' }}
+          MIN_SCORE: ${{ inputs.min_score || '50' }}
+        run: ui-auditer "$URL" --persona "$PERSONA" --fail-under "$MIN_SCORE"
+
+      - name: Tests
+        run: python -m pytest tests/ -q

@@ -70,6 +70,15 @@ def _print_extraction_table(props: UIProperties) -> None:
     t.add_row("Links",        str(props.links_count))
     t.add_row("Inputs",       str(props.inputs_count))
     t.add_row("Text density", f"{props.text_density:.1%}")
+
+    samples = [s for s in props.contrast_samples if isinstance(s, dict) and "ratio" in s]
+    if samples:
+        low = min(samples, key=lambda s: s["ratio"])
+        target = (low.get("targets") or [None])[0]
+        t.add_row(
+            "Lowest contrast",
+            f"{low['ratio']}:1" + (f"  [dim]{target}[/dim]" if target else ""),
+        )
  
     console.print(Panel(t, title="[bold cyan]Extracted Properties[/bold cyan]",
                         border_style="cyan", expand=True))
@@ -168,6 +177,107 @@ def _print_llm_suggestions(suggestions: dict) -> None:
                             border_style="dim", expand=True))
  
  
+def print_comparison(results: list[dict]) -> None:
+    """One row per persona — the ``--compare`` view."""
+    t = Table(title="[bold]All personas[/bold]", box=box.ROUNDED, expand=True)
+    t.add_column("Persona", style="cyan", min_width=18)
+    for label in ("Color", "Type", "Density", "Motion", "Interact"):
+        t.add_column(label, justify="right", min_width=6)
+    t.add_column("Overall", justify="right", min_width=12)
+    t.add_column("Grade", justify="center", min_width=5)
+    t.add_column("Flags", justify="right", min_width=5)
+
+    for r in results:
+        b = r.get("breakdown", {})
+        t.add_row(
+            r["persona_name"],
+            str(b.get("dark_mode", 0)),
+            str(b.get("typography", 0)),
+            str(b.get("visual_density", 0)),
+            str(b.get("animations", 0)),
+            str(b.get("interactivity", 0)),
+            _bar(r["overall_score"], width=8),
+            f"[{_grade_style(r['grade'])}]{r['grade']}[/{_grade_style(r['grade'])}]",
+            str(len(r.get("dealbreakers_triggered", []))),
+        )
+    console.print(t)
+
+
+def print_apply_result(apply: dict) -> None:
+    """Show which suggested rules survived re-rendering, and by how much."""
+    steps = apply.get("steps", [])
+    if steps:
+        t = Table(title="[bold]Closed-loop verification[/bold]", box=box.ROUNDED, expand=True)
+        t.add_column("Rule", style="cyan")
+        t.add_column("Score", justify="right", min_width=9)
+        t.add_column("Result", min_width=9)
+        for step in steps:
+            after = "—" if step.get("score_after") is None else str(step["score_after"])
+            verdict = "[green]kept[/green]" if step.get("kept") else "[red]dropped[/red]"
+            t.add_row(
+                f"{step.get('selector', '')} {{ {step.get('property', '')} }}",
+                f"{step.get('score_before')} → {after}",
+                verdict,
+            )
+        console.print(t)
+
+    baseline = apply.get("baseline_score", 0)
+    final = apply.get("final_score", 0)
+    delta = final - baseline
+    colour = "green" if delta > 0 else "yellow" if delta == 0 else "red"
+    heading = Text()
+    heading.append(f"  {baseline} → {final} ", style="bold")
+    heading.append(f"({delta:+d})\n", style=f"bold {colour}")
+    heading.append(
+        f"  kept {len(apply.get('kept', []))} of "
+        f"{len(apply.get('kept', [])) + len(apply.get('dropped', []))} suggested rules\n",
+        style="white",
+    )
+    for item in apply.get("dropped", []):
+        fix = item.get("fix", {})
+        heading.append(
+            f"  dropped {fix.get('selector', '?')} {{ {fix.get('property', '?')} }}: "
+            f"{item.get('reason', '')}\n",
+            style="dim",
+        )
+    console.print(Panel(heading, title="[bold]Applied fixes[/bold]",
+                        border_style=colour, expand=True))
+
+    if apply.get("css"):
+        console.print(Panel(
+            Text(apply["css"], style="green"),
+            title="[bold]Verified CSS[/bold]",
+            border_style="green",
+            expand=True,
+        ))
+
+
+def print_crawl_table(pages: list[dict]) -> None:
+    """Summary of the pages audited by ``--crawl``."""
+    t = Table(title="[bold]Crawled pages[/bold]", box=box.ROUNDED, expand=True)
+    t.add_column("URL", style="cyan")
+    t.add_column("Score", justify="right", min_width=7)
+    t.add_column("Grade", justify="center", min_width=5)
+    t.add_column("Flags", justify="right", min_width=5)
+
+    scored = []
+    for page in pages:
+        if page.get("error"):
+            t.add_row(page["url"], "[red]error[/red]", "—", "—")
+            continue
+        scored.append(page["score"])
+        t.add_row(
+            page["url"],
+            str(page["score"]),
+            f"[{_grade_style(page['grade'])}]{page['grade']}[/{_grade_style(page['grade'])}]",
+            str(page.get("flags", 0)),
+        )
+    if scored:
+        t.add_section()
+        t.add_row("[bold]Mean[/bold]", f"[bold]{sum(scored) / len(scored):.0f}[/bold]", "", "")
+    console.print(t)
+
+
 # ---------------------------------------------------------------------------
 # Public entry point — called directly from cli.py
 # ---------------------------------------------------------------------------
